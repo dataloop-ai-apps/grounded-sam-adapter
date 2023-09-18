@@ -1,6 +1,7 @@
 import urllib.request
 import torchvision
 import logging
+import pathlib
 import torch
 import time
 import cv2
@@ -24,8 +25,9 @@ class GroundedSam(dl.BaseModelAdapter):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f'setting torch device: {device}')
         # PATHS
-        grounded_dino_config_filepath = "utils/GroundingDINO_SwinT_OGC.py"
         grounded_dino_checkpoint_filepath = "artifacts/groundingdino_swint_ogc.pth"
+        grounded_dino_config_filepath = pathlib.Path(__file__).parent / pathlib.Path('../utils/GroundingDINO_SwinT_OGC.py')
+        grounded_dino_config_filepath = str(grounded_dino_config_filepath.resolve())
         grounded_dino_url = "https://storage.googleapis.com/model-mgmt-snapshots/grounded-dino/groundingdino_swint_ogc.pth"
 
         if not os.path.isfile(grounded_dino_checkpoint_filepath):

@@ -1,7 +1,6 @@
 FROM dataloopai/dtlpy-agent:cpu.py3.8.pytorch2
 USER root
 RUN apt update
-RUN apt install -y git-lfs
 
 USER 1000
 
