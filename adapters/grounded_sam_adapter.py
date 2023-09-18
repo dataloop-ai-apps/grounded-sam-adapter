@@ -41,8 +41,9 @@ class GroundedSam(dl.BaseModelAdapter):
         ############
         # Load SAM #
         ############
+        sam_weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam/sam_vit_b_01ec64.pth'
         sam_checkpoint_filepath = self.configuration.get('sam_checkpoint_filepath', "artifacts/sam_vit_b_01ec64.pth")
-        sam_checkpoint_url = self.configuration.get('sam_checkpoint_url')
+        sam_checkpoint_url = self.configuration.get('sam_checkpoint_url', sam_weights_url)
         sam_model_type = self.configuration.get('sam_model_type', "vit_b")
 
         if not os.path.isfile(sam_checkpoint_filepath):
