@@ -73,7 +73,7 @@ def create_sam(project: dl.Project):
     package = project.packages.push(package_name='sam-model-adapter',
                                     codebase=dl.GitCodebase(
                                         git_url='https://github.com/dataloop-ai-apps/grounded-sam-adapter',
-                                        git_tag='v0.1.10'),
+                                        git_tag='v0.1.11'),
                                     is_global=True,
                                     package_type='ml',
                                     modules=[modules],
@@ -111,13 +111,6 @@ def create_sam(project: dl.Project):
     return model
 
 
-def deploy():
-    dl.setenv('prod')
-    project_name = 'DataloopModels'
-    project = dl.projects.get(project_name)
-    # project = dl.projects.get(project_id='0ebbf673-17a7-469c-bcb2-f00fdaedfc8b')
-
-
 def update():
     f = dl.Filters(resource='services', use_defaults=False)
     f.add(field='packageId', values=package.id)
@@ -135,3 +128,10 @@ def update():
         s.runtime.runner_image = 'dataloop_runner-cpu/grounded-sam:0.1.1'
         # s.package_revision = s.package.version
         s.update()
+
+
+if __name__ == "__main__":
+    dl.setenv('prod')
+    project_name = 'DataloopModels'
+    project = dl.projects.get(project_name)
+    # project = dl.projects.get(project_id='0ebbf673-17a7-469c-bcb2-f00fdaedfc8b')
