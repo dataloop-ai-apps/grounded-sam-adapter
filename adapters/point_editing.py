@@ -32,7 +32,7 @@ class Runner(dl.BaseServiceRunner):
         :return:
         """
         weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam/sam_vit_h_4b8939.pth'
-        weights_filepath = 'artifacts1/sam_vit_h_4b8939.pth'
+        weights_filepath = 'artifacts/sam_vit_h_4b8939.pth'
         model_type = "vit_h"
         device = "cuda"
         self.show = False
@@ -79,7 +79,12 @@ class Runner(dl.BaseServiceRunner):
         results = None
         if bb is not None:
             # The model can also take a box as input, provided in xyxy format.
-            input_box = np.array([bb[0]['x'], bb[0]['y'], bb[1]['x'], bb[1]['y']])
+            left = int(np.maximum(bb[0]['x'], 0))
+            top = int(np.maximum(bb[0]['y'], 0))
+            right = int(np.minimum(bb[1]['x'], image_params.original_size[1]))
+            bottom = int(np.minimum(bb[1]['y'], image_params.original_size[0]))
+            # input_box = np.array([bb[0]['x'], bb[0]['y'], bb[1]['x'], bb[1]['y']])
+            input_box = np.array([left, top, right, bottom])
         else:
             input_box = None
 
@@ -108,7 +113,8 @@ class Runner(dl.BaseServiceRunner):
         logger.info(f'Creating new predicted mask...')
         tic_3 = time.time()
         builder = item.annotations.builder()  # type: dl.AnnotationCollection
-        boxed_mask = masks[0][bb[0]['y']:bb[1]['y'], bb[0]['x']:bb[1]['x']]
+        # boxed_mask = masks[0][bb[0]['y']:bb[1]['y'], bb[0]['x']:bb[1]['x']]
+        boxed_mask = masks[0][input_box[1]:input_box[3], input_box[0]:input_box[2]]
         builder.add(annotation_definition=dl.Segmentation(geo=boxed_mask > 0, label='dummy'))
         toc_final = time.time()
         logger.info(f'time to create annotations: {round(toc_final - tic_3, 2)} seconds')
@@ -118,6 +124,7 @@ class Runner(dl.BaseServiceRunner):
 
 
 def test():
+    ex = dl.executions.get('65321a98e808fdceac4a6fe6')
     runner = Runner(dl=dl)
     bb = [{"x": 66,
            "y": 79},
@@ -125,10 +132,11 @@ def test():
            "y": 460}
           ]
     points = [{"x": 177, "y": 270, "in": True}]
-    item = dl.items.get(item_id='645378429033ec3fcd3b2036')
     color = [255, 0, 0]
 
-    mask_coords = runner.predict_interactive_editing(dl, bb=bb, item=item, color=color, points=points)
+    item = dl.items.get(item_id=ex.input.pop('item')['item_id'])
+
+    mask_coords = runner.predict_interactive_editing(dl, item=item, **ex.input)
 
 
 def test_ex():
@@ -199,6 +207,6 @@ def deploy():
 
 
 if __name__ == "__main__":
-    dl.setenv('prod')
+    dl.setenv('rc')
     # test()
     # deploy()

@@ -25,9 +25,10 @@ class SegmentAnythingAdapter(dl.BaseModelAdapter):
 
     def load(self, local_path, **kwargs):
         logger.info(f'loading model weights. device: {DEVICE}')
-        checkpoint_filepath = self.configuration.get('checkpoint_filepath', '')
-        checkpoint_url = self.configuration.get('checkpoint_url')
-        model_type = self.configuration.get('model_type')
+        checkpoint_filepath = self.configuration.get('checkpoint_filepath', "artifacts/sam_vit_b_01ec64.pth"),
+        checkpoint_url = self.configuration.get('checkpoint_url',
+                                                "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth")
+        model_type = self.configuration.get('model_type', "vit_b")
 
         # SAM Options
         box_nms_thresh = self.configuration.get('box_nms_thresh', 0.7)
