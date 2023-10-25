@@ -2,6 +2,7 @@ import logging
 import os
 import urllib
 from random import randint
+from PIL import Image
 import typing
 import dtlpy as dl
 import numpy as np
@@ -9,10 +10,6 @@ import torch
 import cv2
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 
-"""
-
-
-"""
 logger = logging.getLogger('SamAdapter')
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MAX_WIDTH = MAX_HEIGHT = 640
@@ -133,6 +130,43 @@ class SegmentAnythingAdapter(dl.BaseModelAdapter):
                 batch_annotations.append(collection)
 
         return batch_annotations
+
+    @dl.Package.decorators.function(display_name='Predict Items',
+                                    inputs={'items': 'Item[]', 'annotations_list': 'Annotation[]'},
+                                    outputs={'items': 'Item[]', 'annotations': 'Annotation[]'})
+    def predict_boxes(self, items, annotations_list):
+        """
+
+        :param items: list of items
+        :param annotations_list: list of annotations list - a list per item
+        :return:
+        """
+        batch_annotations = list()
+        for item, annotations in zip(items, annotations_list):
+            filename = item.download(overwrite=True)
+            pil_image = Image.open(filename).convert('RGB')
+            image_annotations = dl.AnnotationCollection()
+            self.model.predictor.set_image(np.asarray(pil_image))
+            for annotation in annotations:
+                input_box = np.array([annotation.left,
+                                      annotation.top,
+                                      annotation.right,
+                                      annotation.bottom])
+                try:
+                    confidence = annotation.metadata['user']['model']['confidence']
+                except KeyError:
+                    confidence = 1.
+                masks, _, _ = self.model.predictor.predict(point_coords=None,
+                                                           point_labels=None,
+                                                           box=input_box,
+                                                           multimask_output=False)
+                image_annotations.add(annotation_definition=dl.Polygon.from_segmentation(mask=masks[0] > 0,
+                                                                                         label=annotation.label),
+                                      model_info={'name': self.model_entity.name,
+                                                  'confidence': confidence})
+            batch_annotations.append(image_annotations)
+            item.annotations.upload(image_annotations)
+        return items, batch_annotations
 
 
 def test():
