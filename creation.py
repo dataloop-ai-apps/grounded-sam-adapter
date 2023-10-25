@@ -73,7 +73,7 @@ def create_sam(project: dl.Project):
     package = project.packages.push(package_name='sam-model-adapter',
                                     codebase=dl.GitCodebase(
                                         git_url='https://github.com/dataloop-ai-apps/grounded-sam-adapter',
-                                        git_tag='v0.1.12'),
+                                        git_tag='v0.1.13'),
                                     is_global=True,
                                     package_type='ml',
                                     modules=[modules],

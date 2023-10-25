@@ -131,7 +131,7 @@ class SegmentAnythingAdapter(dl.BaseModelAdapter):
 
         return batch_annotations
 
-    @dl.Package.decorators.function(display_name='Predict Items',
+    @dl.Package.decorators.function(display_name='Predict Boxes',
                                     inputs={'items': 'Item[]', 'annotations_list': 'Annotation[]'},
                                     outputs={'items': 'Item[]', 'annotations': 'Annotation[]'})
     def predict_boxes(self, items, annotations_list):
