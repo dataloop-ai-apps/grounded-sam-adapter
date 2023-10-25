@@ -142,6 +142,11 @@ class SegmentAnythingAdapter(dl.BaseModelAdapter):
         :return:
         """
         batch_annotations = list()
+        if isinstance(items, dl.Item):
+            items = [items]
+        if isinstance(annotations_list, list) and \
+                (len(annotations_list) == 0 or isinstance(annotations_list[0], dl.Annotation)):
+            annotations_list = [annotations_list]
         for item, annotations in zip(items, annotations_list):
             filename = item.download(overwrite=True)
             pil_image = Image.open(filename).convert('RGB')
