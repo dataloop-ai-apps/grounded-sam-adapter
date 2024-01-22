@@ -6,7 +6,6 @@ import torch
 import time
 import cv2
 import os
-
 import numpy as np
 
 from groundingdino.util.inference import Model, predict
@@ -26,7 +25,8 @@ class GroundedSam(dl.BaseModelAdapter):
         logger.info(f'setting torch device: {device}')
         # PATHS
         grounded_dino_checkpoint_filepath = "artifacts/groundingdino_swint_ogc.pth"
-        grounded_dino_config_filepath = pathlib.Path(__file__).parent / pathlib.Path('../utils/GroundingDINO_SwinT_OGC.py')
+        grounded_dino_config_filepath = pathlib.Path(__file__).parent / pathlib.Path(
+            '../../utils/GroundingDINO_SwinT_OGC.py')
         grounded_dino_config_filepath = str(grounded_dino_config_filepath.resolve())
         grounded_dino_url = "https://storage.googleapis.com/model-mgmt-snapshots/grounded-dino/groundingdino_swint_ogc.pth"
 

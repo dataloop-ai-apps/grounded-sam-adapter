@@ -1,5 +1,5 @@
 import dtlpy as dl
-from adapters.sam_adapter import SegmentAnythingAdapter
+from adapters.sam_adapter.sam_adapter import SegmentAnythingAdapter
 
 
 def test_local_predict_item():
