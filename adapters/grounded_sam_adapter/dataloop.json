@@ -1,0 +1,91 @@
+{
+  "name": "grounded-sam",
+  "displayName": "Grounded SAM",
+  "version": "0.1.16",
+  "scope": "public",
+  "description": "a very interesting demo by combining Grounding DINO and Segment Anything which aims to detect and segment anything with text inputs! And we will continue to improve it and create more interesting demos based on this foundation.",
+  "attributes": {
+    "Provider": "Other",
+    "Category": "Model",
+    "Computer Vision": "Object Detection",
+    "License": "Apache 2.0",
+    "Media Type": "Image"
+  },
+  "codebase": {
+    "type": "git",
+    "gitUrl": "https://github.com/dataloop-ai-apps/grounded-sam-adapter.git",
+    "gitTag": "0.1.16"
+  },
+  "components": {
+    "computeConfigs": [
+      {
+        "name": "grounded-sam-deploy",
+        "runtime": {
+          "podType": "regular-m",
+          "concurrency": 1,
+          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/cpu/grounded-sam:0.1.1",
+          "autoscaler": {
+            "type": "rabbitmq",
+            "minReplicas": 0,
+            "maxReplicas": 2
+          }
+        }
+      }
+    ],
+    "modules": [
+      {
+        "name": "grounded-sam-module",
+        "entryPoint": "adapters/grounded_sam_adapter/grounded_sam_adapter.py",
+        "className": "GroundedSam",
+        "computeConfig": "grounded-sam-deploy",
+        "description": "GroundedSam Module",
+        "initInputs": [
+          {
+            "type": "Model",
+            "name": "model_entity"
+          }
+        ],
+        "functions": [
+          {
+            "name": "predict_items",
+            "input": [
+              {
+                "type": "Item[]",
+                "name": "items",
+                "description": "List of items to run inference on"
+              }
+            ],
+            "output": [],
+            "displayName": "Predict Items",
+            "displayIcon": "",
+            "description": "GroundedSam predict function"
+          }
+        ]
+      }
+    ],
+    "models": [
+      {
+        "name": "grounded-sam",
+        "moduleName": "grounded-sam-module",
+        "scope": "project",
+        "status": "trained",
+        "configuration": {
+          "classes": [
+            "person",
+            "dog"
+          ],
+          "box_threshold": 0.2,
+          "text_threshold": 0.2,
+          "nms_threshold": 0.8
+        },
+        "supportedMethods": {
+          "load": true,
+          "predict": true,
+          "train": false,
+          "evaluate": true
+        },
+        "description": "Object detection with text prompts, segment using SAM"
+      }
+    ]
+  }
+}
