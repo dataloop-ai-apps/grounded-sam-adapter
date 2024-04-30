@@ -8,6 +8,7 @@ import cv2
 import os
 import numpy as np
 
+from concurrent.futures import ThreadPoolExecutor
 from groundingdino.util.inference import Model, predict
 from segment_anything import sam_model_registry, SamPredictor
 
@@ -132,17 +133,30 @@ class GroundedSam(dl.BaseModelAdapter):
             result_masks.append(masks[index])
         return np.array(result_masks)
 
+    def prepare_item_func(self, item):
+        return item
+
     def predict(self, batch, **kwargs):
         # load image
         tic_total = time.time()
+        pool = ThreadPoolExecutor(max_workers=16)
+        batch_images = list(pool.map(self._item_to_image, batch))
         classes = self.configuration.get('classes', None)
         if classes is None:
-            # default
-            classes = {'cat': {'min_area': 0,
-                               'max_area': np.inf},
-                       'house': {'min_area': 0,
-                                 'max_area': np.inf}
-                       }
+            # get from item's recipe
+            try:
+                item: dl.Item = batch[0]
+                labels = list(item.dataset.labels_flat_dict.keys())
+                classes = {c: {'min_area': self.configuration.get('min_area', 0),
+                               'max_area': self.configuration.get('max_area', np.inf)}
+                           for c in labels}
+            except Exception as e:
+                logger.warning(f'Failed taking classes from recipe. Using default classes... Error was: {e}')
+                classes = {'cat': {'min_area': 0,
+                                   'max_area': np.inf},
+                           'house': {'min_area': 0,
+                                     'max_area': np.inf}
+                           }
 
         if isinstance(classes, list):
             # classes list is used - need to deprecate
@@ -164,7 +178,7 @@ class GroundedSam(dl.BaseModelAdapter):
         save_results = kwargs.get('save_results')
 
         batch_annotations = list()
-        for image in batch:
+        for image in batch_images:
             # detect objects
             original_height = image.shape[0]
             original_width = image.shape[1]
