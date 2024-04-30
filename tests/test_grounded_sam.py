@@ -1,5 +1,5 @@
 import dtlpy as dl
-from adapters.grounded_sam_adapter import GroundedSam
+from adapters.grounded_sam_adapter.grounded_sam_adapter import GroundedSam
 from PIL import Image
 import numpy as np
 

@@ -3,7 +3,7 @@ import json
 import base64
 import struct
 import torch
-from segment_anything import sam_model_registry
+from segment_anything import sam_model_registry, SamPredictor
 from adapters.sam_handler import DataloopSamPredictor
 import dtlpy as dl
 import numpy as np
@@ -35,9 +35,12 @@ class Runner(dl.BaseServiceRunner):
         :return:
         """
         weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam/sam_vit_h_4b8939.pth'
+        # weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam/sam_vit_b_01ec64.pth'
         weights_filepath = 'artifacts/sam_vit_h_4b8939.pth'
+        # weights_filepath = 'artifacts/sam_vit_b_01ec64.pth'
         model_type = "vit_h"
-        device = "cuda"
+        # model_type = "vit_b"
+        device = "cpu"
         self.show = False
         if not os.path.isfile(weights_filepath):
             os.makedirs(os.path.dirname(weights_filepath), exist_ok=True)
@@ -50,7 +53,7 @@ class Runner(dl.BaseServiceRunner):
     def get_sam_features(self, dl, item):
         self.cache_item(item=item)
         embedding = self.cache_items_dict[item.id].image_embeddings
-        bytearray_data = bytearray(embedding.cpu().numpy().tobytes())  # float32
+        bytearray_data = embedding.cpu().numpy().tobytes()  # float32
         base64_str = base64.b64encode(bytearray_data).decode('utf-8')
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
@@ -58,7 +61,7 @@ class Runner(dl.BaseServiceRunner):
             json.dump({'item': base64_str}, f)
         features_item = item.dataset.items.upload(local_path=f'tmp/{item.id}.json',
                                                   remote_path='/.dataloop/sam_features',
-                                                  # overwrite=True,
+                                                  overwrite=True,
                                                   remote_name=f'{item.id}.json')
         return features_item.id
 
@@ -187,20 +190,21 @@ class Runner(dl.BaseServiceRunner):
 
 
 def test():
-    ex = dl.executions.get('65321a98e808fdceac4a6fe6')
+    # ex = dl.executions.get('65321a98e808fdceac4a6fe6')
     runner = Runner(dl=dl)
-    bb = [{"x": 66,
-           "y": 79},
-          {"x": 287,
-           "y": 460}
-          ]
-    points = [{"x": 177, "y": 270, "in": True}]
-    color = [255, 0, 0]
-
-    item = dl.items.get(item_id=ex.input.pop('item')['item_id'])
-    item = dl.items.get(None, '652d050fd73711801c5d6120')
-    mask_coords = runner.predict_interactive_editing(dl, item=item, **ex.input)
-    emb = runner.get_sam_features(dl=dl, item=item)
+    # bb = [{"x": 66,
+    #        "y": 79},
+    #       {"x": 287,
+    #        "y": 460}
+    #       ]
+    # points = [{"x": 177, "y": 270, "in": True}]
+    # color = [255, 0, 0]
+    #
+    # item = dl.items.get(item_id=ex.input.pop('item')['item_id'])
+    # item = dl.items.get(None, '652d050fd73711801c5d6120')
+    item = dl.items.get(None, '659c0f5ae86a6a3c2e97d7c8')
+    # mask_coords = runner.predict_interactive_editing(dl, item=item, **ex.input)
+    # emb = runner.get_sam_features(dl=dl, item=item)
     runner.cache_item(item=item)
     embedding = runner.cache_items_dict[item.id].image_embeddings
     bytearray_data = bytearray(embedding.cpu().numpy().tobytes())
@@ -234,12 +238,6 @@ def deploy():
 
     project = dl.projects.get(project_name=project_name)
 
-    ##################
-    # upload_artifacts
-    ##################
-    def upload_artifacts():
-        project.artifacts.upload(filepath='weights/sam_vit_h_4b8939.pth',
-                                 package_name=package_name)
 
     ##################
     # push package
@@ -287,5 +285,5 @@ def deploy():
 
 if __name__ == "__main__":
     dl.setenv('rc')
-    # test()
+    test()
     # deploy()

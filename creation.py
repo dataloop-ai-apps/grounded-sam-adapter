@@ -1,6 +1,6 @@
 import dtlpy as dl
-from adapters.grounded_sam_adapter import GroundedSam
-from adapters.sam_adapter import SegmentAnythingAdapter
+from adapters.grounded_sam_adapter.grounded_sam_adapter import GroundedSam
+from adapters.sam_adapter.sam_adapter import SegmentAnythingAdapter
 
 
 def create_grounded_sam(project: dl.Project):
