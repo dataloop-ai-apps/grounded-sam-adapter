@@ -13,7 +13,8 @@ We created an integration for the Grounded SAM in Dataloop's model management. T
 1. Clone the public model to your Dataloop project.
    ![alt text](assets/model_mgmt.png)
 
-2. Edit the model configuration with the labels you want to predict (these will be used as prompts for Grounding DINO, see full
+2. Edit the model configuration with the labels you want to predict (these will be used as prompts for Grounding DINO,
+   see full
    example [here](https://github.com/IDEA-Research/Grounded-Segment-Anything#running_man-grounded-sam-detect-and-segment-everything-with-text-prompt)).
    `classes` is a dictionary for each prompt class as key and min/max area of the annotation as the values:
    for example:
@@ -23,15 +24,15 @@ model = dl.models.get(model_id='')
 model.configuration['classes'] = {'person': {'min_area': 10,
                                              'max_area': 500},
                                   'tent': {'min_area': 10,
-                                             'max_area': 500}}
+                                           'max_area': 500}}
 model.update()
 ```
-   
    Default min/max are zero and np.inf respectively.  
-
+   *NOTE:* if the `classes` is set to `None` - the classes will be taken from the item's dataset recipe. 
+   
 3. Deploy the model to create a running FaaS for prediction.
 4. Go to the "Test" tab and try it out!
-![alt text](assets/test_tab_results.png)
+   ![alt text](assets/test_tab_results.png)
 
 ## Requirements
 
