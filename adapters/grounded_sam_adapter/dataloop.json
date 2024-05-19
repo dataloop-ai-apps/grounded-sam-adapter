@@ -134,7 +134,7 @@
         "name": "grounded-sam",
         "moduleName": "grounded-sam-module",
         "scope": "project",
-        "status": "trained",
+        "status": "pre-trained",
         "configuration": {
           "classes": [
             "person",

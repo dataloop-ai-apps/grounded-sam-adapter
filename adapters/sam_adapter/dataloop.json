@@ -134,7 +134,7 @@
         "name": "sam-model-adapter",
         "moduleName": "sam-module",
         "scope": "project",
-        "status": "trained",
+        "status": "pre-trained",
         "configuration": {
           "stability_score_threshold": 0.85,
           "predicted_iou_threshold": 0.85,
