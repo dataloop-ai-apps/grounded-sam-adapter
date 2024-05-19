@@ -1,7 +1,7 @@
 {
   "name": "grounded-sam",
   "displayName": "Grounded SAM",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "scope": "public",
   "description": "a very interesting demo by combining Grounding DINO and Segment Anything which aims to detect and segment anything with text inputs! And we will continue to improve it and create more interesting demos based on this foundation.",
   "attributes": {
@@ -14,7 +14,7 @@
   "codebase": {
     "type": "git",
     "gitUrl": "https://github.com/dataloop-ai-apps/grounded-sam-adapter.git",
-    "gitTag": "0.1.18"
+    "gitTag": "0.1.19"
   },
   "components": {
     "computeConfigs": [
