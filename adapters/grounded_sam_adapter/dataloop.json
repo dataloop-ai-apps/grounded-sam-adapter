@@ -9,7 +9,10 @@
     "Category": "Model",
     "Computer Vision": "Object Detection",
     "License": "Apache 2.0",
-    "Media Type": "Image"
+    "Media Type": [
+      "Image"
+    ],
+    "Deployed By": "Dataloop"
   },
   "codebase": {
     "type": "git",
