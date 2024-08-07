@@ -1,14 +1,10 @@
 import logging
 import os
 import urllib
-from random import randint
-from PIL import Image
-import typing
 import dtlpy as dl
-import numpy as np
 import torch
-import cv2
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
+from adapters.base_sam_adapter import SAMAdapter
 
 logger = logging.getLogger('SamAdapter')
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -18,7 +14,7 @@ MAX_WIDTH = MAX_HEIGHT = 640
 @dl.Package.decorators.module(description='Model Adapter for Segment Anything',
                               name='model-adapter',
                               init_inputs={'model_entity': dl.Model})
-class SegmentAnythingAdapter(dl.BaseModelAdapter):
+class SegmentAnythingAdapter(SAMAdapter):
 
     def load(self, local_path, **kwargs):
         logger.info(f'loading model weights. device: {DEVICE}')
@@ -62,122 +58,12 @@ class SegmentAnythingAdapter(dl.BaseModelAdapter):
                                                min_mask_region_area=min_mask_region_area
                                                )
 
-    def adjust_image_size(self, image: np.ndarray) -> np.ndarray:
-        height, width = image.shape[:2]
-        if height > width:
-            if height > MAX_HEIGHT:
-                height, width = MAX_HEIGHT, int(MAX_HEIGHT / height * width)
-        else:
-            if width > MAX_WIDTH:
-                height, width = int(MAX_WIDTH / width * height), MAX_WIDTH
-        image = cv2.resize(image, (width, height))
-        return image
 
-    def draw_masks(self, image: np.ndarray, masks: typing.List[np.ndarray], alpha: float = 0.7) -> np.ndarray:
-        import cv2
-        for mask in masks:
-            color = [randint(127, 255) for _ in range(3)]
-
-            # draw mask overlay
-            colored_mask = np.expand_dims(mask["segmentation"], 0).repeat(3, axis=0)
-            colored_mask = np.moveaxis(colored_mask, 0, -1)
-            masked = np.ma.MaskedArray(image, mask=colored_mask, fill_value=color)
-            image_overlay = masked.filled()
-            image = cv2.addWeighted(image, 1 - alpha, image_overlay, alpha, 0)
-
-            # draw contour
-            contours, _ = cv2.findContours(
-                np.uint8(mask["segmentation"]), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            cv2.drawContours(image, contours, -1, (0, 0, 255), 2)
-        return image
-
-    def predict(self, batch, **kwargs):
-        stability_score_threshold = 0.85
-        predicted_iou_threshold = 0.85
-        output_type = self.configuration.get('output_type', 'binary')
-        batch_annotations = list()
-        for image in batch:
-            reshaped_image = self.adjust_image_size(image=image)
-            masks = self.model.generate(reshaped_image)
-            collection = dl.AnnotationCollection()
-            for i_detection, detection in enumerate(masks):
-                # if (detection["predicted_iou"] < predicted_iou_threshold
-                #         or detection["stability_score"] < stability_score_threshold):
-                mask = cv2.resize(detection['segmentation'].astype('uint8'), (image.shape[1], image.shape[0]))
-                model_info = {'name': self.model_entity.name,
-                              'model_id': self.model_entity.id,
-                              'confidence': float(detection['stability_score'])}
-                if output_type == 'binary':
-                    collection.add(dl.Segmentation(geo=mask,
-                                                   label=f'poly{i_detection}'),
-                                   model_info=model_info)
-                elif output_type == 'box':
-                    poly = dl.Polygon.from_segmentation(mask=mask,
-                                                        label=f'mask-{i_detection}',
-                                                        max_instances=1)
-                    collection.add(dl.Box(top=poly.top,
-                                          left=poly.left,
-                                          bottom=poly.bottom,
-                                          right=poly.right,
-                                          label=f'box-{i_detection}'),
-                                   model_info=model_info)
-
-                else:
-                    collection.add(dl.Polygon.from_segmentation(mask=mask,
-                                                                label=f'poly-{i_detection}'),
-                                   model_info=model_info)
-                batch_annotations.append(collection)
-
-        return batch_annotations
-
-    @dl.Package.decorators.function(display_name='Predict Boxes',
-                                    inputs={'items': 'Item[]', 'annotations_list': 'Annotation[]'},
-                                    outputs={'items': 'Item[]', 'annotations': 'Annotation[]'})
-    def predict_boxes(self, items, annotations_list):
-        """
-
-        :param items: list of items
-        :param annotations_list: list of annotations list - a list per item
-        :return:
-        """
-        batch_annotations = list()
-        if isinstance(items, dl.Item):
-            items = [items]
-        if isinstance(annotations_list, list) and \
-                (len(annotations_list) == 0 or isinstance(annotations_list[0], dl.Annotation)):
-            annotations_list = [annotations_list]
-        for item, annotations in zip(items, annotations_list):
-            filename = item.download(overwrite=True)
-            pil_image = Image.open(filename).convert('RGB')
-            image_annotations = dl.AnnotationCollection()
-            self.model.predictor.set_image(np.asarray(pil_image))
-            for annotation in annotations:
-                input_box = np.array([annotation.left,
-                                      annotation.top,
-                                      annotation.right,
-                                      annotation.bottom])
-                try:
-                    confidence = annotation.metadata['user']['model']['confidence']
-                except KeyError:
-                    confidence = 1.
-                masks, _, _ = self.model.predictor.predict(point_coords=None,
-                                                           point_labels=None,
-                                                           box=input_box,
-                                                           multimask_output=False)
-                image_annotations.add(annotation_definition=dl.Polygon.from_segmentation(mask=masks[0] > 0,
-                                                                                         label=annotation.label),
-                                      model_info={'name': self.model_entity.name,
-                                                  'confidence': confidence})
-            batch_annotations.append(image_annotations)
-            item.annotations.upload(image_annotations)
-        return items, batch_annotations
-
-
-def test():
-    self = SegmentAnythingAdapter()
-    m = dl.models.get(None, '648956679a02a7fac095eedc')
-    self.load_from_model(model_entity=m)
-    dl.setenv('prod')
-    item = dl.items.get(item_id='64871ee6e98a8633ddfe91ed')
-    self.predict_items(items=[item])
+if __name__ == '__main__':
+    dl.setenv('rc')
+    item = dl.items.get(item_id='66b352dc1d2d6c6530447c04')
+    model = dl.models.get(model_id='66b33a35002458f33db87350')
+    model.name = 'sam_adapter'
+    model.configuration = {}
+    adapter = SegmentAnythingAdapter(model_entity=model)
+    adapter.predict_items(items=[item])

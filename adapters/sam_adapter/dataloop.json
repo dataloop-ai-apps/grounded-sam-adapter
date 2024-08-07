@@ -26,7 +26,7 @@
         "runtime": {
           "podType": "regular-m",
           "concurrency": 1,
-          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/cpu/grounded-sam:0.1.1",
+          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/cpu/grounded-sam:0.1.2",
           "autoscaler": {
             "type": "rabbitmq",
             "minReplicas": 0,

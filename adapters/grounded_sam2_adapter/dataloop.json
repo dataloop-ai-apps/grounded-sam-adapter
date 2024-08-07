@@ -1,6 +1,6 @@
 {
-  "name": "grounded-sam",
-  "displayName": "Grounded SAM",
+  "name": "grounded-sam2",
+  "displayName": "Grounded SAM2",
   "version": "0.1.20",
   "scope": "public",
   "description": "a very interesting demo by combining Grounding DINO and Segment Anything which aims to detect and segment anything with text inputs! And we will continue to improve it and create more interesting demos based on this foundation.",
@@ -22,7 +22,7 @@
   "components": {
     "computeConfigs": [
       {
-        "name": "grounded-sam-deploy",
+        "name": "grounded-sam2-deploy",
         "runtime": {
           "podType": "regular-m",
           "concurrency": 1,
@@ -37,8 +37,8 @@
     ],
     "modules": [
       {
-        "name": "grounded-sam-module",
-        "entryPoint": "adapters/grounded_sam_adapter/grounded_sam_adapter.py",
+        "name": "grounded-sam2-module",
+        "entryPoint": "adapters/grounded_sam2_adapter/grounded_sam2_adapter.py",
         "className": "GroundedSam",
         "computeConfig": "grounded-sam-deploy",
         "description": "GroundedSam Module",
@@ -82,7 +82,7 @@
             ],
             "displayName": "Evaluate a Model",
             "displayIcon": "",
-            "description": "Function to evaluate GroundedSam model performance"
+            "description": "Function to evaluate GroundedSam2 model performance"
           },
           {
             "name": "predict_items",
@@ -107,7 +107,7 @@
             ],
             "displayName": "Predict Items",
             "displayIcon": "",
-            "description": "GroundedSam predict function"
+            "description": "GroundedSam2 predict function"
           },
           {
             "name": "predict_dataset",
@@ -127,24 +127,26 @@
             ],
             "displayName": "Predict Dataset",
             "displayIcon": "",
-            "description": "Function to run GroundedSam inference on a dataset"
+            "description": "Function to run GroundedSam2 inference on a dataset"
           }
         ]
       }
     ],
     "models": [
       {
-        "name": "grounded-sam",
-        "moduleName": "grounded-sam-module",
+        "name": "grounded-sam2",
+        "moduleName": "grounded-sam2-module",
         "scope": "project",
         "status": "pre-trained",
         "configuration": {
           "recipe_id": "",
           "box_threshold": 0.2,
           "text_threshold": 0.2,
-          "nms_threshold": 0.8
+          "nms_threshold": 0.8,
+          "checkpoint_filepath": "artifacts/sam2_hiera_large.pt",
+          "checkpoint_url": "https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_large.pt"
         },
-        "description": "Object detection with text prompts, segment using SAM"
+        "description": "Object detection with text prompts, segment using SAM2"
       }
     ]
   }
