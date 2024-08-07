@@ -2,7 +2,7 @@ onnxruntime
 dtlpy
 opencv-python
 pycocotools
-#matplotlib
+matplotlib
 onnx
 git+https://github.com/IDEA-Research/GroundingDINO
 git+https://github.com/facebookresearch/segment-anything.git
