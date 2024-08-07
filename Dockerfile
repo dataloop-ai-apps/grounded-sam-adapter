@@ -1,9 +1,11 @@
 FROM dataloopai/dtlpy-agent:gpu.cuda.11.8.py3.10.opencv
 
+USER root
+RUN apt update && apt install -y curl
 
 USER 1000
 ENV HOME=/tmp
-RUN python3 -m pip install -y pip curl
+RUN python3 -m pip install --upgrade pip
 RUN pip install --user 'torch==2.0.1' 'torchvision==0.15.2' 'torchaudio==2.0.2'
 
 
