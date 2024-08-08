@@ -39,7 +39,7 @@
       {
         "name": "sam2-module",
         "entryPoint": "adapters/sam2_adapter/sam2_adapter.py",
-        "className": "SegmentAnythingAdapter",
+        "className": "SegmentAnything2Adapter",
         "computeConfig": "sam2-deploy",
         "description": "Sam2 Module",
         "initInputs": [
