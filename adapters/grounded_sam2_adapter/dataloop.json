@@ -39,9 +39,9 @@
       {
         "name": "grounded-sam2-module",
         "entryPoint": "adapters/grounded_sam2_adapter/grounded_sam2_adapter.py",
-        "className": "GroundedSam",
-        "computeConfig": "grounded-sam-deploy",
-        "description": "GroundedSam Module",
+        "className": "GroundedSam2",
+        "computeConfig": "grounded-sam2-deploy",
+        "description": "GroundedSam2 Module",
         "initInputs": [
           {
             "type": "Model",
