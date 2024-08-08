@@ -32,15 +32,3 @@ class GroundedSam2(GroundedSamBase):
         sam2_model = build_sam2(model_cfg, checkpoint_filepath, device=device)
         self.sam_predictor = SAM2ImagePredictor(sam2_model)
 
-
-if __name__ == '__main__':
-    # dl.setenv('rc')
-    dataset = dl.datasets.get(dataset_id='66a8e530c47183518d08d3d7')
-    filters = dl.Filters()
-    filters.add(field='metadata.system.mimetype', values='image*')
-    items = dataset.items.list(filters=filters)
-    items = items.items
-    model = dl.models.get(model_id='66b490c6595c48943d5b4a85')
-    adapter = GroundedSam2(model_entity=model)
-    adapter.predict_items(items=items)
-dl.Item.download()
