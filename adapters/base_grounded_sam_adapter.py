@@ -23,7 +23,7 @@ class GroundedSamBase(dl.BaseModelAdapter):
     def load_dino(self, device):
         logger.info(f'setting torch device: {device}')
         # PATHS
-        grounded_dino_checkpoint_filepath = "artifacts/groundingdino_swint_ogc.pth"
+        grounded_dino_checkpoint_filepath = os.path.join(os.getcwd(), "artifacts/groundingdino_swint_ogc.pth")
         grounded_dino_config_filepath = pathlib.Path(__file__).parent / pathlib.Path('utils/GroundingDINO_SwinT_OGC.py')
         grounded_dino_config_filepath = str(grounded_dino_config_filepath.resolve())
         grounded_dino_url = "https://storage.googleapis.com/model-mgmt-snapshots/grounded-dino/groundingdino_swint_ogc.pth"
@@ -175,7 +175,10 @@ class GroundedSamBase(dl.BaseModelAdapter):
                 text_threshold=text_threshold,
                 device=self.grounding_dino_model.device,
                 remove_combined=True)
-            source_h, source_w, _ = resized_image.shape
+            try:
+                source_h, source_w, _ = resized_image.shape
+            except ValueError:
+                source_h, source_w = resized_image.shape
             detections = Model.post_process_result(
                 source_h=source_h,
                 source_w=source_w,
