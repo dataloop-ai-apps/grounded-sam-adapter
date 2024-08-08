@@ -23,10 +23,14 @@ class GroundedSamBase(dl.BaseModelAdapter):
     def load_dino(self, device):
         logger.info(f'setting torch device: {device}')
         # PATHS
-        grounded_dino_checkpoint_filepath = "/tmp/app/artifacts/groundingdino_swint_ogc.pth"
+        grounded_dino_checkpoint_filepath = "artifacts/groundingdino_swint_ogc.pth"
         grounded_dino_config_filepath = pathlib.Path(__file__).parent / pathlib.Path('utils/GroundingDINO_SwinT_OGC.py')
         grounded_dino_config_filepath = str(grounded_dino_config_filepath.resolve())
+        grounded_dino_url = "https://storage.googleapis.com/model-mgmt-snapshots/grounded-dino/groundingdino_swint_ogc.pth"
 
+        if not os.path.isfile(grounded_dino_checkpoint_filepath):
+            os.makedirs(os.path.dirname(grounded_dino_checkpoint_filepath), exist_ok=True)
+            urllib.request.urlretrieve(grounded_dino_url, grounded_dino_checkpoint_filepath)
         logger.info(f'loading weights grounded_dino_config_filepath: {grounded_dino_config_filepath}')
         logger.info(f'loading weights grounded_dino_checkpoint_filepath: {grounded_dino_checkpoint_filepath}')
         self.grounding_dino_model = Model(model_config_path=grounded_dino_config_filepath,
