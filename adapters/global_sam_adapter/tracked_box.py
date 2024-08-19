@@ -7,6 +7,7 @@ import threading
 from PIL import Image
 import torch
 
+
 def _load_img_as_tensor(img_pil, image_size):
     img_np = np.array(img_pil.convert("RGB").resize((image_size, image_size)))
     if img_np.dtype == np.uint8:  # np.uint8 is expected for JPEG images
@@ -16,6 +17,8 @@ def _load_img_as_tensor(img_pil, image_size):
     img = torch.from_numpy(img_np).permute(2, 0, 1)
     video_width, video_height = img_pil.size  # the original video size
     return img, video_height, video_width
+
+
 class AsyncVideoFrameLoader:
     """
     A list of video frames to be load asynchronously without blocking session start.
@@ -169,8 +172,9 @@ class TrackedBox:
         mask, _, _ = sam.predict(image_properties=image_params,
                                  box=input_box,
                                  multimask_output=False)
-        ann_bbox = Bbox.from_mask(mask)
+        ann_bbox = Bbox.from_mask(mask[0])
         df_ratio = 1 if not self.max_age else (self.max_age - self.dead_frames) / self.max_age
+        score = 1  # TODO check if there's a confidence
 
         if ann_bbox:  # if there is an annotation
             if not min_area or ann_bbox.area > min_area:  # and if it's bigger than min_area

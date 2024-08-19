@@ -315,6 +315,13 @@ class Runner(dl.BaseServiceRunner):
                 }
         return video_segments
 
+    @staticmethod
+    def _track_calc_new_size(height, width, max_size):
+        ratio = np.maximum(height, width) / max_size
+
+        width, height = int(width / ratio), int(height / ratio)
+        return width, height
+
     def track(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
         """
         :param item_stream_url:  item.stream for Dataloop item, url for json video links
@@ -332,14 +339,15 @@ class Runner(dl.BaseServiceRunner):
             logger.info('[Tracker] Started')
 
             logger.info('[Tracker] video url: {}'.format(item_stream_url))
-            d_size = 1024
+            max_size = 640
             tic_get_cap = time.time()
             cap = self._track_get_item_stream_capture(item_stream_url)
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
             frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-            x_factor = frame_width / d_size
-            y_factor = frame_height / d_size
+            new_width, new_height = self._track_calc_new_size(height=frame_height, width=frame_width, max_size=max_size)
+            x_factor = frame_width / new_width
+            y_factor = frame_height / new_height
             runtime_get_cap = time.time() - tic_get_cap
             logger.info('[Tracker] starting from {} to {}'.format(start_frame, start_frame + frame_duration))
 
@@ -359,7 +367,7 @@ class Runner(dl.BaseServiceRunner):
             for i_frame in range(1, frame_duration):
                 logger.info(f'GPU memory usage: {self.get_gpu_memory()}[mb]')
 
-                logger.info('[Tracker] processing frame #{}'.format(start_frame + i_frame))
+                logger.info(f'[Tracker] start processing frame #{start_frame + i_frame}')
                 tic = time.time()
                 ret, frame = cap.read()
                 states_dict_flag = all(bb.gone for bb in states_dict.values())
@@ -368,7 +376,7 @@ class Runner(dl.BaseServiceRunner):
                                 f"opencv frame read :{ret}, all bbs gone: {states_dict_flag}")
                     break
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                image_params: dict = self.predictor.set_image(image=cv2.resize(frame, (d_size, d_size)))
+                image_params: dict = self.predictor.set_image(image=cv2.resize(frame, (new_width, new_height)))
 
                 runtime_load_frame.append(time.time() - tic)
 
@@ -393,7 +401,9 @@ class Runner(dl.BaseServiceRunner):
                                                                              right=int(np.round(bbox.x2 * x_factor)),
                                                                              label='dummy').to_coordinates(color=None)
 
-                runtime_track.append(time.time() - tic)
+                t = time.time() - tic
+                runtime_track.append(t)
+                logger.info(f'[Tracker] start processing frame #{start_frame + i_frame} in {t:.2f}[s]')
 
             runtime_total = time.time() - tic_total
             fps = frame_duration / (runtime_total + 1e-6)
@@ -568,7 +578,7 @@ def test_tracker():
     # inputs = dl.executions.get('66c327b8945b576b92ea2754').input
     # inputs['dl'] = dl
     # output_dict = self.track(**inputs)
-    output_dict = self.track_new(**inputs)
+    output_dict = self.track(**inputs)
     for a_id, frames in output_dict.items():
         annotation = dl.annotations.get(a_id)
         for i_frame, box in frames.items():
