@@ -83,7 +83,8 @@ class GroundedSamBase(dl.BaseModelAdapter):
             top = int(top * height_scale)
             right = int(right * width_scale)
             bottom = int(bottom * height_scale)
-
+            if confidence < 0.55:
+                continue
             model_info = {'name': self.model_entity.name,
                           'model_id': self.model_entity.id,
                           'confidence': float(confidence)}
