@@ -28,15 +28,6 @@
         },
         "location": "videoTracker",
         "icon": "icon-dl-video-filled"
-      },
-      {
-        "displayName": "SAM2 Tracker NEW",
-        "invoke": {
-          "type": "function",
-          "namespace": "global-sam.global-sam.track_new"
-        },
-        "location": "videoTracker",
-        "icon": "icon-dl-video-filled"
       }
     ],
     "modules": [
