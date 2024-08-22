@@ -43,7 +43,7 @@ class Runner(dl.BaseServiceRunner):
         """
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        model_cfg = os.path.join(os.getcwd(), "utils", "sam2_hiera_l.yaml")
+        model_cfg = "sam2_hiera_l.yaml"
         weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_large.pt'
         weights_filepath = 'artifacts/sam2_hiera_large.pth'
         self.show = False
