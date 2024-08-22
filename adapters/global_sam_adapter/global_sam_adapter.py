@@ -17,8 +17,8 @@ import dtlpy as dl
 from sam2.build_sam import build_sam2, build_sam2_video_predictor
 from sam2.sam2_video_predictor import SAM2VideoPredictor
 
-from adapters.global_sam_adapter.sam2_handler import DataloopSamPredictor
-from adapters.global_sam_adapter.tracked_box import TrackedBox, Bbox, AsyncVideoFrameLoader
+from sam2_handler import DataloopSamPredictor
+from tracked_box import TrackedBox, Bbox, AsyncVideoFrameLoader
 
 logger = logging.getLogger('[GLOBAL-SAM]')
 logger.setLevel('INFO')
