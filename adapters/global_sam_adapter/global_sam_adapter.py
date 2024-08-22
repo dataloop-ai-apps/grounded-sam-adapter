@@ -79,21 +79,6 @@ class Runner(dl.BaseServiceRunner):
         if progress is not None:
             progress.update(message=message)
 
-    def get_sam_features(self, dl, item, to_upload):
-        self.cache_item(item=item)
-        embedding = self.cache_items_dict[item.id].image_embeddings
-        bytearray_data = embedding.cpu().numpy().tobytes()  # float32
-        base64_str = base64.b64encode(bytearray_data).decode('utf-8')
-        if not os.path.isdir('tmp'):
-            os.makedirs('tmp')
-        with open(f'tmp/{item.id}.json', 'w') as f:
-            json.dump({'item': base64_str}, f)
-        features_item = item.dataset.items.upload(local_path=f'tmp/{item.id}.json',
-                                                  remote_path='/.dataloop/sam_features',
-                                                  overwrite=True,
-                                                  remote_name=f'{item.id}.json')
-        return features_item.id
-
     def cache_item(self, item: dl.Item):
         if item.id not in self.cache_items_dict:
             logger.info(f'item: {item.id} isnt cached, preparing...')
@@ -103,74 +88,6 @@ class Runner(dl.BaseServiceRunner):
                                                         orig_hw=setting_image_params['orig_hw'],
                                                         high_res_feats=setting_image_params['high_res_feats'],
                                                         timestamp=datetime.datetime.now())
-
-    def predict_interactive_editing(self, dl, item, points, bb=None, mask_uri=None, click_radius=4, color=None):
-        """
-        :param item: item to run on
-        :param bb: ROI to crop bb[0]['y']: bb[1]['y'], bb[0]['x']: bb[1]['x']
-        :param click_radius: ROI to crop
-        :param mask_uri: ROI to crop
-        :param points: list of {'x':x, 'y':y, 'in':True}
-        :param color:
-        :return:
-        """
-        # get item's image
-        if 'bot.dataloop.ai' in dl.info()['user_email']:
-            raise ValueError('This function cannot run with a bot user')
-        tic_1 = time.time()
-        self.cache_item(item=item)
-        image_params = self.cache_items_dict[item.id]
-        toc_1 = time.time()
-        logger.info(f'time to prepare  item: {round(toc_1 - tic_1, 2)} seconds')
-
-        logger.info(f'Running prediction...')
-        # get prediction
-        tic_2 = time.time()
-        results = None
-        if bb is not None:
-            # The model can also take a box as input, provided in xyxy format.
-            left = int(np.maximum(bb[0]['x'], 0))
-            top = int(np.maximum(bb[0]['y'], 0))
-            right = int(np.minimum(bb[1]['x'], image_params.original_size[1]))
-            bottom = int(np.minimum(bb[1]['y'], image_params.original_size[0]))
-            # input_box = np.array([bb[0]['x'], bb[0]['y'], bb[1]['x'], bb[1]['y']])
-            input_box = np.array([left, top, right, bottom])
-        else:
-            input_box = None
-
-        if len(points) > 0:
-            point_coords = list()
-            point_labels = list()
-            for pt in points:
-                point_labels.append(1 if pt['in'] is True else 0)
-                point_coords.append([pt['x'], pt['y']])
-            point_labels = np.asarray(point_labels)
-            point_coords = np.asarray(point_coords)
-        else:
-            point_labels = None
-            point_coords = None
-
-        masks, _, _ = self.predictor.predict(image_properties=image_params.dict(),
-                                             point_coords=point_coords,
-                                             point_labels=point_labels,
-                                             box=input_box,
-                                             multimask_output=False,
-                                             )
-        toc_2 = time.time()
-        logger.info(f'time to get predicted mask: {round(toc_2 - tic_2, 2)} seconds')
-
-        # push new annotation
-        logger.info(f'Creating new predicted mask...')
-        tic_3 = time.time()
-        builder = item.annotations.builder()  # type: dl.AnnotationCollection
-        # boxed_mask = masks[0][bb[0]['y']:bb[1]['y'], bb[0]['x']:bb[1]['x']]
-        boxed_mask = masks[0][input_box[1]:input_box[3], input_box[0]:input_box[2]]
-        builder.add(annotation_definition=dl.Segmentation(geo=boxed_mask > 0, label='dummy'))
-        toc_final = time.time()
-        logger.info(f'time to create annotations: {round(toc_final - tic_3, 2)} seconds')
-        logger.info(f'Total time of execution: {round(toc_final - tic_1, 2)} seconds')
-        results = builder.annotations[0].annotation_definition.to_coordinates(color=color)
-        return results
 
     @staticmethod
     def _track_get_modality(mod: dict):
@@ -205,6 +122,31 @@ class Runner(dl.BaseServiceRunner):
                 item_stream_url = item_stream_url.replace(item_id, webm_id)
         ############
         return cv2.VideoCapture('{}?jwt={}'.format(item_stream_url, dl.token()))
+
+    @staticmethod
+    def _track_calc_new_size(height, width, max_size):
+        ratio = np.maximum(height, width) / max_size
+
+        width, height = int(width / ratio), int(height / ratio)
+        return width, height
+
+    # Semantic studio function
+    def get_sam_features(self, dl, item, to_upload):
+        self.cache_item(item=item)
+        embedding = self.cache_items_dict[item.id].image_embeddings
+        bytearray_data = embedding.cpu().numpy().tobytes()  # float32
+        base64_str = base64.b64encode(bytearray_data).decode('utf-8')
+        if not os.path.isdir('tmp'):
+            os.makedirs('tmp')
+        with open(f'tmp/{item.id}.json', 'w') as f:
+            json.dump({'item': base64_str}, f)
+        features_item = item.dataset.items.upload(local_path=f'tmp/{item.id}.json',
+                                                  remote_path='/.dataloop/sam_features',
+                                                  overwrite=True,
+                                                  remote_name=f'{item.id}.json')
+        return features_item.id
+
+    # default studio
 
     @staticmethod
     @torch.inference_mode()
@@ -315,13 +257,7 @@ class Runner(dl.BaseServiceRunner):
                 }
         return video_segments
 
-    @staticmethod
-    def _track_calc_new_size(height, width, max_size):
-        ratio = np.maximum(height, width) / max_size
-
-        width, height = int(width / ratio), int(height / ratio)
-        return width, height
-
+    # Tracker
     def track(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
         """
         :param item_stream_url:  item.stream for Dataloop item, url for json video links
@@ -420,6 +356,7 @@ class Runner(dl.BaseServiceRunner):
             raise
         return output_dict
 
+    # ToolBar?
     def box_to_seg(self,
                    dl,
                    item: dl.Item,
@@ -510,141 +447,70 @@ class Runner(dl.BaseServiceRunner):
         logger.info(f'Total: {runtime_total:02.1f}s')
         return annotation_response
 
+    def predict_interactive_editing(self, dl, item, points, bb=None, mask_uri=None, click_radius=4, color=None):
+        """
+        :param item: item to run on
+        :param bb: ROI to crop bb[0]['y']: bb[1]['y'], bb[0]['x']: bb[1]['x']
+        :param click_radius: ROI to crop
+        :param mask_uri: ROI to crop
+        :param points: list of {'x':x, 'y':y, 'in':True}
+        :param color:
+        :return:
+        """
+        # get item's image
+        if 'bot.dataloop.ai' in dl.info()['user_email']:
+            raise ValueError('This function cannot run with a bot user')
+        tic_1 = time.time()
+        self.cache_item(item=item)
+        image_params = self.cache_items_dict[item.id]
+        toc_1 = time.time()
+        logger.info(f'time to prepare  item: {round(toc_1 - tic_1, 2)} seconds')
 
-def test():
-    # ex = dl.executions.get('65321a98e808fdceac4a6fe6')
-    self = Runner(dl=dl)
-    # bb = [{"x": 66,
-    #        "y": 79},
-    #       {"x": 287,
-    #        "y": 460}
-    #       ]
-    # points = [{"x": 177, "y": 270, "in": True}]
-    # color = [255, 0, 0]
-    #
-    # item = dl.items.get(item_id=ex.input.pop('item')['item_id'])
-    # item = dl.items.get(None, '652d050fd73711801c5d6120')
-    item = dl.items.get(None, '659c0f5ae86a6a3c2e97d7c8')
-    # mask_coords = runner.predict_interactive_editing(dl, item=item, **ex.input)
-    # emb = runner.get_sam_features(dl=dl, item=item)
-    self.cache_item(item=item)
-    embedding = self.cache_items_dict[item.id].image_embed
-    bytearray_data = bytearray(embedding.cpu().numpy().tobytes())
-    # float_list = struct.unpack('f' * (len(bytearray_data) // 4), bytearray_data)
-    # binary_data = struct.pack('f' * len(float_list), *float_list)
-    base64_str = base64.b64encode(bytearray_data).decode('utf-8')
-    with open(r'e:\ttt.json', 'w') as f:
-        json.dump(base64_str, f)
+        logger.info(f'Running prediction...')
+        # get prediction
+        tic_2 = time.time()
+        results = None
+        if bb is not None:
+            # The model can also take a box as input, provided in xyxy format.
+            left = int(np.maximum(bb[0]['x'], 0))
+            top = int(np.maximum(bb[0]['y'], 0))
+            right = int(np.minimum(bb[1]['x'], image_params.original_size[1]))
+            bottom = int(np.minimum(bb[1]['y'], image_params.original_size[0]))
+            # input_box = np.array([bb[0]['x'], bb[0]['y'], bb[1]['x'], bb[1]['y']])
+            input_box = np.array([left, top, right, bottom])
+        else:
+            input_box = None
 
+        if len(points) > 0:
+            point_coords = list()
+            point_labels = list()
+            for pt in points:
+                point_labels.append(1 if pt['in'] is True else 0)
+                point_coords.append([pt['x'], pt['y']])
+            point_labels = np.asarray(point_labels)
+            point_coords = np.asarray(point_coords)
+        else:
+            point_labels = None
+            point_coords = None
 
-def test_ex():
-    service = dl.services.get(service_name='sam-point-editing')
-    ex = service.execute(
-        function_name='predict_interactive_editing',
-        execution_input={"bb": [{"x": 65, "y": 91},
-                                {"x": 282, "y": 463}],
-                         "points": [{"x": 174, "y": 277, "in": True}],
-                         "item": {"item_id": "64e5f716fe649e509dc98351"},
-                         "color": [255, 0, 0]}
-    )
-    service = dl.services.get(service_name='sam-point-editing')
-    ex = service.execute(
-        function_name='get_sam_features',
-        execution_input={"item": {"item_id": "652d050fd73711801c5d6120"}}
-    )
+        masks, _, _ = self.predictor.predict(image_properties=image_params.dict(),
+                                             point_coords=point_coords,
+                                             point_labels=point_labels,
+                                             box=input_box,
+                                             multimask_output=False,
+                                             )
+        toc_2 = time.time()
+        logger.info(f'time to get predicted mask: {round(toc_2 - tic_2, 2)} seconds')
 
-
-def test_box_to_seg():
-    self = Runner(dl=dl)
-    item = dl.items.get(None, '659c029a9d62ab2514292e87')
-    annotations_dict = {ann.id: ann for ann in item.annotations.list() if ann.type == 'box'}
-    # mask_coords = runner.predict_interactive_editing(dl, item=item, **ex.input)
-    # emb = runner.get_sam_features(dl=dl, item=item)
-    annotations = self.box_to_seg(dl=dl, item=item, annotations_dict=annotations_dict, return_type='binary')
-    item.annotations.upload(annotations)
-
-
-def test_tracker():
-    self = Runner(dl=dl)
-    item = dl.items.get(item_id='66c32175b0aedce631ccd4b1')
-    inputs = {
-        "item_stream_url": item.stream,
-        "bbs": {ann.id: ann.coordinates for ann in item.annotations.list() if ann.type == 'box'},
-        "start_frame": 0,
-        "frame_duration": 72,
-        "dl": dl
-    }
-
-    # inputs = dl.executions.get('66c327b8945b576b92ea2754').input
-    # inputs['dl'] = dl
-    # output_dict = self.track(**inputs)
-    output_dict = self.track(**inputs)
-    for a_id, frames in output_dict.items():
-        annotation = dl.annotations.get(a_id)
-        for i_frame, box in frames.items():
-            annotation.add_frame(frame_num=i_frame,
-                                 annotation_definition=dl.Box(left=box[0]['x'],
-                                                              right=box[1]['x'],
-                                                              top=box[0]['y'],
-                                                              bottom=box[1]['y'],
-                                                              label=annotation.label))
-        annotation.update(True)
-
-
-def deploy():
-    package_name = 'sam-point-editing'
-    project_name = 'DataloopTasks'
-
-    project = dl.projects.get(project_name=project_name)
-
-    ##################
-    # push package
-    ##################
-    modules = [dl.PackageModule(entry_point='adapters/point_editing.py',
-                                class_name='Runner',
-                                name='sam',
-                                init_inputs=[],
-                                functions=[dl.PackageFunction(inputs=[dl.FunctionIO(type='Item', name='item'),
-                                                                      dl.FunctionIO(type='Json', name='bb'),
-                                                                      dl.FunctionIO(type='Json', name='points'),
-                                                                      dl.FunctionIO(type='Json', name='color')],
-                                                              name='predict_interactive_editing'),
-                                           dl.PackageFunction(inputs=[dl.FunctionIO(type='Item', name='item')],
-                                                              name='get_sam_features')
-                                           ]
-                                )
-               ]
-    package = project.packages.push(package_name=package_name,
-                                    src_path=os.getcwd(),
-                                    modules=modules,
-                                    requirements=[dl.PackageRequirement(name='dtlpy')],
-                                    ignore_sanity_check=True)
-    # package = project.packages.get(package_name=package_name)
-
-    ##################
-    # deploy service
-    ##################
-    # service = package.services.deploy(service_name=package_name,
-    #                                   init_input=[],
-    #                                   module_name='sam',
-    #                                   # sdk_version='1.76.7',
-    #                                   runtime=dl.KubernetesRuntime(pod_type=dl.INSTANCE_CATALOG_GPU_K80_M,
-    #                                                                concurrency=5,
-    #                                                                autoscaler=dl.KubernetesRabbitmqAutoscaler(
-    #                                                                    min_replicas=1),
-    #                                                                runner_image='gcr.io/viewo-g/piper/agent/runner/gpu/sam_point_edit:0.5.0'),
-    #                                   is_global=True,
-    #                                   jwt_forward=True
-    #                                   )
-    service = dl.services.get(service_name=package_name)
-    service.package_revision = package.version
-    service.update(force=True)
-
-
-if __name__ == "__main__":
-    dl.setenv('rc')
-    # test()
-    # deploy()
-    # runner = Runner(dl=dl)
-    # test_box_to_seg()
-    test_tracker()
+        # push new annotation
+        logger.info(f'Creating new predicted mask...')
+        tic_3 = time.time()
+        builder = item.annotations.builder()  # type: dl.AnnotationCollection
+        # boxed_mask = masks[0][bb[0]['y']:bb[1]['y'], bb[0]['x']:bb[1]['x']]
+        boxed_mask = masks[0][input_box[1]:input_box[3], input_box[0]:input_box[2]]
+        builder.add(annotation_definition=dl.Segmentation(geo=boxed_mask > 0, label='dummy'))
+        toc_final = time.time()
+        logger.info(f'time to create annotations: {round(toc_final - tic_3, 2)} seconds')
+        logger.info(f'Total time of execution: {round(toc_final - tic_1, 2)} seconds')
+        results = builder.annotations[0].annotation_definition.to_coordinates(color=color)
+        return results
