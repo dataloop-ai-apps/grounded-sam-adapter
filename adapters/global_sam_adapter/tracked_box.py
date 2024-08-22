@@ -1,11 +1,10 @@
-import numpy as np
-from adapters.global_sam_adapter.sam2_handler import DataloopSamPredictor
-from sam2.modeling.sam2_base import SAM2Base
-import tqdm
-import cv2
-import threading
 from PIL import Image
+import numpy as np
+import threading
 import torch
+import tqdm
+
+from adapters.global_sam_adapter.sam2_handler import DataloopSamPredictor
 
 
 def _load_img_as_tensor(img_pil, image_size):
@@ -13,7 +12,7 @@ def _load_img_as_tensor(img_pil, image_size):
     if img_np.dtype == np.uint8:  # np.uint8 is expected for JPEG images
         img_np = img_np / 255.0
     else:
-        raise RuntimeError(f"Unknown image dtype: {img_np.dtype} on {img_path}")
+        raise RuntimeError(f"Unknown image dtype: {img_np.dtype}")
     img = torch.from_numpy(img_np).permute(2, 0, 1)
     video_width, video_height = img_pil.size  # the original video size
     return img, video_height, video_width
@@ -72,9 +71,9 @@ class AsyncVideoFrameLoader:
             return img
 
         ret, frame = self.cap.read()
-        img, video_height, video_width = _load_img_as_tensor(
-            Image.fromarray(frame), self.image_size
-        )
+        img, video_height, video_width = _load_img_as_tensor(img_pil=Image.fromarray(frame),
+                                                             image_size=self.image_size,
+                                                             )
         self.video_height = video_height
         self.video_width = video_width
         # normalize by mean and std

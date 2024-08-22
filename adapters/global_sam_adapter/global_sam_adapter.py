@@ -44,8 +44,14 @@ class Runner(dl.BaseServiceRunner):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         model_cfg = "sam2_hiera_l.yaml"
+        model_cfg = "sam2_hiera_b+.yaml"
+        model_cfg = "sam2_hiera_s.yaml"
         weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_large.pt'
-        weights_filepath = 'artifacts/sam2_hiera_large.pth'
+        weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_base_plus.pt'
+        weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_small.pt'
+        weights_filepath = 'artifacts/sam2_hiera_large.pt'
+        weights_filepath = 'artifacts/sam2_hiera_base_plus.pt'
+        weights_filepath = 'artifacts/sam2_hiera_small.pt'
         self.show = False
         if not os.path.isfile(weights_filepath):
             os.makedirs(os.path.dirname(weights_filepath), exist_ok=True)
@@ -153,6 +159,7 @@ class Runner(dl.BaseServiceRunner):
     def init_state(
             self,
             cap,
+            image_size,
             num_frames,
             offload_video_to_cpu=False,
             offload_state_to_cpu=False,
@@ -166,7 +173,7 @@ class Runner(dl.BaseServiceRunner):
             num_frames=num_frames,
             img_mean=img_mean,
             img_std=img_std,
-            image_size=1024,
+            image_size=image_size,
             offload_video_to_cpu=offload_video_to_cpu,
             compute_device=compute_device,
         )
@@ -227,16 +234,17 @@ class Runner(dl.BaseServiceRunner):
         return inference_state
 
     def track_new(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
-        import torch
-        video_segments = dict()
-
+        cap = self._track_get_item_stream_capture(item_stream_url)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
+        image_size = 1024  # must be same height and width
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-            cap = self._track_get_item_stream_capture(item_stream_url)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             inference_state = self.init_state(self=self.video_predictor,
                                               cap=cap,
+                                              image_size=image_size,
                                               num_frames=frame_duration,
-                                              )
+                                              offload_state_to_cpu=False,
+                                              offload_video_to_cpu=False)
 
             for bbox_id, bb in bbs.items():
                 left = int(bb[0]['x'])
@@ -250,11 +258,28 @@ class Runner(dl.BaseServiceRunner):
                     obj_id=bbox_id,
                     box=input_box)
             # propagate the prompts to get masklets throughout the video
-            for out_frame_idx, out_obj_ids, out_mask_logits in self.video_predictor.propagate_in_video(inference_state):
-                video_segments[out_frame_idx] = {
-                    out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-                    for i, out_obj_id in enumerate(out_obj_ids)
-                }
+            for out_frame_idx, out_obj_ids, out_mask_logits in self.video_predictor.propagate_in_video(
+                    inference_state=inference_state,
+                    # start_frame_idx=start_frame,
+                    # max_frame_num_to_track=frame_duration
+            ):
+                for i, bbox_id in enumerate(out_obj_ids):
+                    mask = (out_mask_logits[i] > 0.0).cpu().numpy()[0]
+                    if mask.any():
+                        logger.info('Found tracking BB')
+                        rows = np.any(mask, axis=1)
+                        cols = np.any(mask, axis=0)
+                        ymin, ymax = np.where(rows)[0][[0, -1]]
+                        xmin, xmax = np.where(cols)[0][[0, -1]]
+                        video_segments[bbox_id][start_frame + out_frame_idx] = dl.Box(top=int(np.round(ymin)),
+                                                                                      left=int(np.round(xmin)),
+                                                                                      bottom=int(np.round(ymax)),
+                                                                                      right=int(np.round(xmax)),
+                                                                                      label='dummy').to_coordinates(
+                            color=None)
+                    else:
+                        logger.info('NOT Found tracking BB')
+                        video_segments[bbox_id][start_frame + out_frame_idx] = None
         return video_segments
 
     # Tracker
@@ -514,3 +539,30 @@ class Runner(dl.BaseServiceRunner):
         logger.info(f'Total time of execution: {round(toc_final - tic_1, 2)} seconds')
         results = builder.annotations[0].annotation_definition.to_coordinates(color=color)
         return results
+
+
+if __name__ == "__main__":
+    self = Runner(dl=dl)
+    item = dl.items.get(item_id='66c32175b0aedce631ccd4b1')
+    inputs = {
+        "item_stream_url": item.stream,
+        "bbs": {ann.id: ann.coordinates for ann in item.annotations.list() if ann.type == 'box'},
+        "start_frame": 0,
+        "frame_duration": 72,
+        "dl": dl
+    }
+
+    # inputs = dl.executions.get('66c327b8945b576b92ea2754').input
+    # inputs['dl'] = dl
+    # output_dict = self.track(**inputs)
+    output_dict = self.track_new(**inputs)
+    for a_id, frames in output_dict.items():
+        annotation = dl.annotations.get(a_id)
+        for i_frame, box in frames.items():
+            annotation.add_frame(frame_num=i_frame,
+                                 annotation_definition=dl.Box(left=box[0]['x'],
+                                                              right=box[1]['x'],
+                                                              top=box[0]['y'],
+                                                              bottom=box[1]['y'],
+                                                              label=annotation.label))
+        annotation.update(True)
