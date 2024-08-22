@@ -163,6 +163,7 @@
       {
         "name": "global-sam",
         "moduleName": "global-sam",
+        "useUserJwt": true,
         "runtime": {
           "podType": "gpu-t4-m",
           "concurrency": 1,
