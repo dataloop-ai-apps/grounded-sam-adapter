@@ -30,7 +30,7 @@
         "icon": "icon-dl-video-filled"
       },
       {
-        "displayName": "Box to Seg",
+        "displayName": "Box to Segmentation",
         "invoke": {
           "type": "function",
           "namespace": "global-sam.global-sam.box_to_seg"
@@ -39,7 +39,7 @@
         "conditions": {
           "resources": [
             {
-              "entityType": "annotation",
+              "entityType": "annotations",
               "filter": {
                 "$or": [
                   {
