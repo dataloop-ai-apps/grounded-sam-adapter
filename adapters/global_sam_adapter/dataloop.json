@@ -166,12 +166,12 @@
         "useUserJwt": true,
         "runtime": {
           "podType": "gpu-t4-m",
-          "concurrency": 1,
+          "concurrency": 10,
           "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6",
           "autoscaler": {
             "minReplicas": 1,
-            "maxReplicas": 2,
-            "queueLength": 100
+            "maxReplicas": 7,
+            "queueLength": 10
           }
         },
         "executionTimeout": 36000
