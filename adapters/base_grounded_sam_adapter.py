@@ -10,7 +10,6 @@ import numpy as np
 
 from concurrent.futures import ThreadPoolExecutor
 from groundingdino.util.inference import Model, predict
-from segment_anything import sam_model_registry, SamPredictor
 
 import dtlpy as dl
 
@@ -20,17 +19,15 @@ logger = logging.getLogger('GroundedAdapter')
 @dl.Package.decorators.module(description='Grounded SAM model adapter',
                               name='model-adapter',
                               init_inputs={'model_entity': dl.Model})
-class GroundedSam(dl.BaseModelAdapter):
-    def load(self, local_path, **kwargs):
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+class GroundedSamBase(dl.BaseModelAdapter):
+    def load_dino(self, device):
         logger.info(f'setting torch device: {device}')
         # PATHS
-        grounded_dino_checkpoint_filepath = "artifacts/groundingdino_swint_ogc.pth"
-        grounded_dino_config_filepath = pathlib.Path(__file__).parent / pathlib.Path(
-            '../../utils/GroundingDINO_SwinT_OGC.py')
+        grounded_dino_config_filepath = pathlib.Path(__file__).parent / pathlib.Path('utils/GroundingDINO_SwinT_OGC.py')
         grounded_dino_config_filepath = str(grounded_dino_config_filepath.resolve())
-        grounded_dino_url = "https://storage.googleapis.com/model-mgmt-snapshots/grounded-dino/groundingdino_swint_ogc.pth"
 
+        grounded_dino_url = "https://storage.googleapis.com/model-mgmt-snapshots/grounded-dino/groundingdino_swint_ogc.pth"
+        grounded_dino_checkpoint_filepath = os.path.join(os.getcwd(), "artifacts/groundingdino_swint_ogc.pth")
         if not os.path.isfile(grounded_dino_checkpoint_filepath):
             os.makedirs(os.path.dirname(grounded_dino_checkpoint_filepath), exist_ok=True)
             urllib.request.urlretrieve(grounded_dino_url, grounded_dino_checkpoint_filepath)
@@ -39,22 +36,6 @@ class GroundedSam(dl.BaseModelAdapter):
         self.grounding_dino_model = Model(model_config_path=grounded_dino_config_filepath,
                                           model_checkpoint_path=grounded_dino_checkpoint_filepath,
                                           device=str(device))
-        ############
-        # Load SAM #
-        ############
-        sam_weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam/sam_vit_b_01ec64.pth'
-        sam_checkpoint_filepath = self.configuration.get('sam_checkpoint_filepath', "artifacts/sam_vit_b_01ec64.pth")
-        sam_checkpoint_url = self.configuration.get('sam_checkpoint_url', sam_weights_url)
-        sam_model_type = self.configuration.get('sam_model_type', "vit_b")
-
-        if not os.path.isfile(sam_checkpoint_filepath):
-            os.makedirs(os.path.dirname(sam_checkpoint_filepath), exist_ok=True)
-            urllib.request.urlretrieve(sam_checkpoint_url, sam_checkpoint_filepath)
-        logger.info(f'loading weights sam_checkpoint_path: {sam_checkpoint_filepath}')
-        # Building SAM Model and SAM Predictor
-        sam = sam_model_registry[sam_model_type](checkpoint=sam_checkpoint_filepath)
-        sam.to(device=device)
-        self.sam_predictor = SamPredictor(sam)
 
     def adjust_image_size(self, image: np.ndarray) -> np.ndarray:
         height, width = image.shape[:2]
@@ -137,45 +118,40 @@ class GroundedSam(dl.BaseModelAdapter):
         return item
 
     def predict(self, batch, **kwargs):
+        # load_configs
+        box_threshold = self.configuration.get('box_threshold', 0.2)
+        text_threshold = self.configuration.get('text_threshold', 0.2)
+        nms_threshold = self.configuration.get('nms_threshold', 0.8)
+        output_type = self.configuration.get('output_type', 'polygon')  # box, binary
+        with_nms = self.configuration.get('with_nms', True)
+        ontology_id = self.configuration.get('ontology_id', None)
+        save_results = kwargs.get('save_results')
+
         # load image
+
         tic_total = time.time()
         pool = ThreadPoolExecutor(max_workers=16)
         batch_images = list(pool.map(self._item_to_image, batch))
-        classes = self.configuration.get('classes', None)
-        if classes is None:
-            # get from item's recipe
-            try:
-                item: dl.Item = batch[0]
-                labels = list(item.dataset.labels_flat_dict.keys())
-                classes = {c: {'min_area': self.configuration.get('min_area', 0),
-                               'max_area': self.configuration.get('max_area', np.inf)}
-                           for c in labels}
-            except Exception as e:
-                logger.warning(f'Failed taking classes from recipe. Using default classes... Error was: {e}')
-                classes = {'cat': {'min_area': 0,
-                                   'max_area': np.inf},
-                           'house': {'min_area': 0,
-                                     'max_area': np.inf}
-                           }
 
-        if isinstance(classes, list):
-            # classes list is used - need to deprecate
-            classes = {c: {'min_area': self.configuration.get('min_area', 0),
-                           'max_area': self.configuration.get('max_area', np.inf)}
-                       for c in classes}
+        # Get classes
+        if ontology_id is not None:
+            ont = dl.ontologies.get(ontology_id=ontology_id)
+            classes = ont.labels_flat_dict
+        else:
+            item: dl.Item = batch[0]
+            classes = item.dataset.labels_flat_dict
+
+        labels = list(classes.keys())
+        classes = {c: {'min_area': self.configuration.get('min_area', 0),
+                       'max_area': self.configuration.get('max_area', np.inf)}
+                   for c in labels}
+
         # validation and add default area
         for c, val in classes.items():
             if 'min_area' not in val:
                 val['min_area'] = 0
             if 'max_area' not in val:
                 val['max_area'] = np.inf
-
-        box_threshold = self.configuration.get('box_threshold', 0.2)
-        text_threshold = self.configuration.get('text_threshold', 0.2)
-        nms_threshold = self.configuration.get('nms_threshold', 0.8)
-        output_type = self.configuration.get('output_type', 'polygon')  # box, binary
-        with_nms = self.configuration.get('with_nms', True)
-        save_results = kwargs.get('save_results')
 
         batch_annotations = list()
         for image in batch_images:
@@ -199,7 +175,10 @@ class GroundedSam(dl.BaseModelAdapter):
                 text_threshold=text_threshold,
                 device=self.grounding_dino_model.device,
                 remove_combined=True)
-            source_h, source_w, _ = resized_image.shape
+            try:
+                source_h, source_w, _ = resized_image.shape
+            except ValueError:
+                source_h, source_w = resized_image.shape
             detections = Model.post_process_result(
                 source_h=source_h,
                 source_w=source_w,
@@ -207,13 +186,6 @@ class GroundedSam(dl.BaseModelAdapter):
                 logits=logits)
             class_id = Model.phrases2classes(phrases=phrases, classes=classes_list)
             detections.class_id = class_id
-
-            # detections = self.grounding_dino_model.predict_with_classes(
-            #     image=resized_image,
-            #     classes=list(classes.keys()),
-            #     box_threshold=box_threshold,
-            #     text_threshold=text_threshold
-            # )
             logger.info(f'Finished image Grounded DINO, time: {time.time() - tic:.2f}[s]')
             logger.info(f"Before NMS: {len(detections.xyxy)} boxes")
             # filter area

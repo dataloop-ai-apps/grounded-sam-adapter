@@ -1,9 +1,9 @@
 {
-  "name": "sam-adapter",
-  "displayName": "SAM",
+  "name": "sam2-adapter",
+  "displayName": "SAM2",
   "version": "0.1.21",
   "scope": "public",
-  "description": "The Segment Anything Model (SAM) produces high quality object masks from input prompts such as points or boxes, and it can be used to generate masks for all objects in an image. It has been trained on a dataset of 11 million images and 1.1 billion masks, and has strong zero-shot performance on a variety of segmentation tasks.",
+  "description": "The Segment Anything Model (SAM2) produces high quality object masks from input prompts such as points or boxes, and it can be used to generate masks for all objects in an image. It has been trained on a dataset of 11 million images and 1.1 billion masks, and has strong zero-shot performance on a variety of segmentation tasks.",
   "attributes": {
     "Provider": "Meta",
     "Category": "Model",
@@ -22,11 +22,11 @@
   "components": {
     "computeConfigs": [
       {
-        "name": "sam-deploy",
+        "name": "sam2-deploy",
         "runtime": {
           "podType": "regular-m",
           "concurrency": 1,
-          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/cpu/grounded-sam:0.1.1",
+          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.4",
           "autoscaler": {
             "type": "rabbitmq",
             "minReplicas": 0,
@@ -37,11 +37,11 @@
     ],
     "modules": [
       {
-        "name": "sam-module",
-        "entryPoint": "adapters/sam_adapter/sam_adapter.py",
-        "className": "SegmentAnythingAdapter",
-        "computeConfig": "sam-deploy",
-        "description": "Sam Module",
+        "name": "sam2-module",
+        "entryPoint": "adapters/sam2_adapter/sam2_adapter.py",
+        "className": "SegmentAnything2Adapter",
+        "computeConfig": "sam2-deploy",
+        "description": "Sam2 Module",
         "initInputs": [
           {
             "type": "Model",
@@ -82,7 +82,7 @@
             ],
             "displayName": "Evaluate a Model",
             "displayIcon": "",
-            "description": "Function to evaluate Sam model performance"
+            "description": "Function to evaluate Sam2 model performance"
           },
           {
             "name": "predict_items",
@@ -107,7 +107,7 @@
             ],
             "displayName": "Predict Items",
             "displayIcon": "",
-            "description": "Sam predict function"
+            "description": "Sam2 predict function"
           },
           {
             "name": "predict_dataset",
@@ -134,20 +134,19 @@
     ],
     "models": [
       {
-        "name": "sam-model-adapter",
-        "moduleName": "sam-module",
+        "name": "sam2-model-adapter",
+        "moduleName": "sam2-module",
         "scope": "project",
         "status": "pre-trained",
         "configuration": {
           "stability_score_threshold": 0.85,
           "predicted_iou_threshold": 0.85,
           "output_type": "polygon",
-          "checkpoint_filepath": "artifacts/sam_vit_b_01ec64.pth",
-          "checkpoint_url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
-          "model_type": "vit_b",
+          "checkpoint_filepath": "artifacts/sam2_hiera_large.pt",
+          "checkpoint_url": "https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_large.pt",
           "id_to_label_map": {}
         },
-        "description": "Segment Anything model"
+        "description": "Segment Anything 2 model"
       }
     ]
   }

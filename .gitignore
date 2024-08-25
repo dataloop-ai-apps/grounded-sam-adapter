@@ -398,3 +398,5 @@ export_output
 /scripts
 /artifacts
 customer_*.*
+*.onnx
+*dataloop_scripts.py

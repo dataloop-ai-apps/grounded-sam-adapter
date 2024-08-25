@@ -1,0 +1,181 @@
+{
+  "name": "global-sam-adapter",
+  "displayName": "Global SAM2 Adapter",
+  "description": "SAM2 adapter for global functions",
+  "version": "0.1.20",
+  "scope": "public",
+  "codebase": {
+    "type": "git",
+    "gitUrl": "https://github.com/dataloop-ai-apps/grounded-sam-adapter.git",
+    "gitTag": "0.1.20"
+  },
+  "components": {
+    "toolbars": [
+      {
+        "displayName": "SAM2 Tracker",
+        "invoke": {
+          "type": "function",
+          "namespace": "global-sam.global-sam.track"
+        },
+        "location": "videoTracker",
+        "icon": "icon-dl-video-filled"
+      },
+      {
+        "displayName": "SAM2 Tracker NEW",
+        "invoke": {
+          "type": "function",
+          "namespace": "global-sam.global-sam.track_new"
+        },
+        "location": "videoTracker",
+        "icon": "icon-dl-video-filled"
+      }
+    ],
+    "modules": [
+      {
+        "name": "global-sam",
+        "entryPoint": "adapters/global_sam_adapter/global_sam_adapter.py",
+        "className": "Runner",
+        "initInputs": [],
+        "functions": [
+          {
+            "name": "track",
+            "description": "Sam Video Tracker",
+            "input": [
+              {
+                "name": "dl",
+                "type": "Json"
+              },
+              {
+                "name": "item_stream_url",
+                "type": "Json"
+              },
+              {
+                "name": "bbs",
+                "type": "Json"
+              },
+              {
+                "name": "start_frame",
+                "type": "Json"
+              },
+              {
+                "name": "frame_duration",
+                "type": "Json"
+              }
+            ],
+            "output": [
+              {
+                "name": "output_dict",
+                "type": "Json"
+              }
+            ]
+          },
+          {
+            "name": "track_new",
+            "description": "Sam Video Tracker",
+            "input": [
+              {
+                "name": "dl",
+                "type": "Json"
+              },
+              {
+                "name": "item_stream_url",
+                "type": "Json"
+              },
+              {
+                "name": "bbs",
+                "type": "Json"
+              },
+              {
+                "name": "start_frame",
+                "type": "Json"
+              },
+              {
+                "name": "frame_duration",
+                "type": "Json"
+              }
+            ],
+            "output": [
+              {
+                "name": "output_dict",
+                "type": "Json"
+              }
+            ]
+          },
+          {
+            "name": "predict_interactive_editing",
+            "description": "Predict Interactive Editing",
+            "input": [
+              {
+                "name": "dl",
+                "type": "Json"
+              },
+              {
+                "name": "item",
+                "type": "Item"
+              },
+              {
+                "name": "points",
+                "type": "Json"
+              },
+              {
+                "name": "bb",
+                "type": "Json"
+              },
+              {
+                "name": "color",
+                "type": "Json"
+              }
+            ],
+            "output": []
+          },
+          {
+            "name": "box_to_seg",
+            "description": "Box to Seg",
+            "input": [
+              {
+                "name": "dl",
+                "type": "Json"
+              },
+              {
+                "name": "item",
+                "type": "Item"
+              },
+              {
+                "name": "annotations_dict",
+                "type": "Json"
+              },
+              {
+                "name": "return_type",
+                "type": "String"
+              }
+            ],
+            "output": [
+              {
+                "name": "annotation_response",
+                "type": "Annotation[]"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "services": [
+      {
+        "name": "global-sam",
+        "moduleName": "global-sam",
+        "useUserJwt": true,
+        "runtime": {
+          "podType": "gpu-t4-m",
+          "concurrency": 10,
+          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6",
+          "autoscaler": {
+            "minReplicas": 1,
+            "maxReplicas": 7,
+            "queueLength": 10
+          }
+        },
+        "executionTimeout": 36000
+      }
+    ]
+  }
+}
