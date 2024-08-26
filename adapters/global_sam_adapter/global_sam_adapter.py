@@ -413,7 +413,8 @@ class Runner(dl.BaseServiceRunner):
         annotation_response = list()
         self.cache_item(item=item)
         image_params = self.cache_items_dict[item.id]
-        for annotation in annotations:
+        for annotation_dict in annotations:
+            annotation = dl.Annotation.from_json(annotation_dict)
             coordinates = annotation.coordinates
             logger.info(f'annotation {count}/{len(annotations)}')
             count += 1
