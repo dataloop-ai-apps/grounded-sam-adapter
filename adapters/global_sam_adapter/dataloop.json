@@ -176,7 +176,8 @@
                 "name": "annotation_response",
                 "type": "Annotation[]"
               }
-            ]
+            ],
+            "action": "drawAnnotation"
           }
         ]
       }
@@ -196,7 +197,7 @@
             "queueLength": 10
           }
         },
-        "executionTimeout": 36000
+        "executionTimeout": 3600
       }
     ]
   }
