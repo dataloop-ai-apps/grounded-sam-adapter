@@ -385,7 +385,7 @@ class Runner(dl.BaseServiceRunner):
     def box_to_seg(self,
                    dl,
                    item: dl.Item,
-                   annotations: dict,
+                   annotations,
                    return_type: str = 'segment',
                    progress: dl.Progress = None) -> list:
         """
@@ -413,7 +413,7 @@ class Runner(dl.BaseServiceRunner):
         annotation_response = list()
         self.cache_item(item=item)
         image_params = self.cache_items_dict[item.id]
-        for annotation_id, annotation in annotations.items():
+        for annotation in annotations:
             coordinates = annotation.coordinates
             logger.info(f'annotation {count}/{len(annotations)}')
             count += 1

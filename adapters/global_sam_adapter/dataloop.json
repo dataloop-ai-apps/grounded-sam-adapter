@@ -164,7 +164,7 @@
               },
               {
                 "name": "annotations",
-                "type": "Json"
+                "type": "Json[]"
               },
               {
                 "name": "return_type",
