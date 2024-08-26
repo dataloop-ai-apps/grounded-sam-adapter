@@ -39,7 +39,7 @@
         "conditions": {
           "resources": [
             {
-              "entityType": "annotations",
+              "entityType": "annotation",
               "filter": {
                 "$or": [
                   {

@@ -10,9 +10,9 @@ import json
 import time
 import os
 import cv2
+import dtlpy as dl
 
 import numpy as np
-import dtlpy as dl
 
 from sam2.build_sam import build_sam2, build_sam2_video_predictor
 from sam2.sam2_video_predictor import SAM2VideoPredictor
@@ -106,7 +106,7 @@ class Runner(dl.BaseServiceRunner):
         else:
             return None
 
-    def _track_get_item_stream_capture(self, item_stream_url):
+    def _track_get_item_stream_capture(self, dl, item_stream_url):
         #############
         # replace to webm stream
         if dl.environment() in item_stream_url:
@@ -234,7 +234,7 @@ class Runner(dl.BaseServiceRunner):
         return inference_state
 
     def track_new(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
-        cap = self._track_get_item_stream_capture(item_stream_url)
+        cap = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
         image_size = 1024  # must be same height and width
@@ -302,7 +302,7 @@ class Runner(dl.BaseServiceRunner):
             logger.info('[Tracker] video url: {}'.format(item_stream_url))
             max_size = 640
             tic_get_cap = time.time()
-            cap = self._track_get_item_stream_capture(item_stream_url)
+            cap = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
             frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
@@ -539,30 +539,3 @@ class Runner(dl.BaseServiceRunner):
         logger.info(f'Total time of execution: {round(toc_final - tic_1, 2)} seconds')
         results = builder.annotations[0].annotation_definition.to_coordinates(color=color)
         return results
-
-
-if __name__ == "__main__":
-    self = Runner(dl=dl)
-    item = dl.items.get(item_id='66c32175b0aedce631ccd4b1')
-    inputs = {
-        "item_stream_url": item.stream,
-        "bbs": {ann.id: ann.coordinates for ann in item.annotations.list() if ann.type == 'box'},
-        "start_frame": 0,
-        "frame_duration": 72,
-        "dl": dl
-    }
-
-    # inputs = dl.executions.get('66c327b8945b576b92ea2754').input
-    # inputs['dl'] = dl
-    # output_dict = self.track(**inputs)
-    output_dict = self.track_new(**inputs)
-    for a_id, frames in output_dict.items():
-        annotation = dl.annotations.get(a_id)
-        for i_frame, box in frames.items():
-            annotation.add_frame(frame_num=i_frame,
-                                 annotation_definition=dl.Box(left=box[0]['x'],
-                                                              right=box[1]['x'],
-                                                              top=box[0]['y'],
-                                                              bottom=box[1]['y'],
-                                                              label=annotation.label))
-        annotation.update(True)
