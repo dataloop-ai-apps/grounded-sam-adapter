@@ -163,7 +163,7 @@
                 "type": "Item"
               },
               {
-                "name": "annotations_dict",
+                "name": "annotations",
                 "type": "Json"
               },
               {

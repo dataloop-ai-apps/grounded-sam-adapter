@@ -385,14 +385,14 @@ class Runner(dl.BaseServiceRunner):
     def box_to_seg(self,
                    dl,
                    item: dl.Item,
-                   annotations_dict: dict,
+                   annotations: dict,
                    return_type: str = 'segment',
                    progress: dl.Progress = None) -> list:
         """
 
         :param dl: DTLPY sdk instance
         :param item:
-        :param annotations_dict:
+        :param annotations:
         :param return_type:
         :param progress:
         :return:
@@ -413,9 +413,9 @@ class Runner(dl.BaseServiceRunner):
         annotation_response = list()
         self.cache_item(item=item)
         image_params = self.cache_items_dict[item.id]
-        for annotation_id, annotation in annotations_dict.items():
+        for annotation_id, annotation in annotations.items():
             coordinates = annotation.coordinates
-            logger.info(f'annotation {count}/{len(annotations_dict)}')
+            logger.info(f'annotation {count}/{len(annotations)}')
             count += 1
             left = int(coordinates[0]['x'])
             top = int(coordinates[0]['y'])
