@@ -35,6 +35,7 @@
           "type": "function",
           "namespace": "global-sam.global-sam.box_to_seg"
         },
+        "action": "drawAnnotation",
         "location": "studioAnnotation",
         "conditions": {
           "resources": [
@@ -176,8 +177,7 @@
                 "name": "annotation_response",
                 "type": "Annotation[]"
               }
-            ],
-            "action": "drawAnnotation"
+            ]
           }
         ]
       }
