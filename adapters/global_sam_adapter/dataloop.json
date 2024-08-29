@@ -12,16 +12,7 @@
   "components": {
     "toolbars": [
       {
-        "displayName": "SAM2 Tracker",
-        "invoke": {
-          "type": "function",
-          "namespace": "global-sam.global-sam.track"
-        },
-        "location": "videoTracker",
-        "icon": "icon-dl-video-filled"
-      },
-      {
-        "displayName": "SAM2 Tracker NEW",
+        "displayName": "AI Tracker",
         "invoke": {
           "type": "function",
           "namespace": "global-sam.global-sam.track_new"
