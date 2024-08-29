@@ -42,15 +42,16 @@ class Runner(dl.BaseServiceRunner):
         :return:
         """
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        logger.info(f'GPU available: {torch.cuda.is_available()}')
 
-        model_cfg = "sam2_hiera_l.yaml"
-        model_cfg = "sam2_hiera_b+.yaml"
+        # model_cfg = "sam2_hiera_l.yaml"
+        # model_cfg = "sam2_hiera_b+.yaml"
         model_cfg = "sam2_hiera_s.yaml"
-        weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_large.pt'
-        weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_base_plus.pt'
+        # weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_large.pt'
+        # weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_base_plus.pt'
         weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_small.pt'
-        weights_filepath = 'artifacts/sam2_hiera_large.pt'
-        weights_filepath = 'artifacts/sam2_hiera_base_plus.pt'
+        # weights_filepath = 'artifacts/sam2_hiera_large.pt'
+        # weights_filepath = 'artifacts/sam2_hiera_base_plus.pt'
         weights_filepath = 'artifacts/sam2_hiera_small.pt'
         self.show = False
         if not os.path.isfile(weights_filepath):
@@ -234,7 +235,10 @@ class Runner(dl.BaseServiceRunner):
         self._get_image_feature(inference_state, frame_idx=0, batch_size=1)
         return inference_state
 
-    def track_new(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
+    def track(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
+
+        logger.info(f'GPU memory usage: {self.get_gpu_memory()}[mb]')
+
         cap = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
@@ -255,7 +259,7 @@ class Runner(dl.BaseServiceRunner):
                 input_box = np.array([left, top, right, bottom])
                 frame_idx, object_ids, masks = self.video_predictor.add_new_points_or_box(
                     inference_state=inference_state,
-                    frame_idx=start_frame,
+                    frame_idx=0,
                     obj_id=bbox_id,
                     box=input_box)
             # propagate the prompts to get masklets throughout the video
@@ -284,7 +288,7 @@ class Runner(dl.BaseServiceRunner):
         return video_segments
 
     # Tracker
-    def track(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
+    def track_old(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
         """
         :param item_stream_url:  item.stream for Dataloop item, url for json video links
         :param bbs: dictionary of annotation.id : BB
