@@ -244,6 +244,21 @@
                 "type": "Annotation[]"
               }
             ]
+          },
+          {
+            "name": "get_sam_features",
+            "description": "Get SAM2 features",
+            "input": [
+              {
+                "name": "dl",
+                "type": "Json"
+              },
+              {
+                "name": "item",
+                "type": "Item"
+              }
+            ],
+            "output": []
           }
         ]
       }

@@ -137,7 +137,7 @@ class Runner(dl.BaseServiceRunner):
         return width, height
 
     # Semantic studio function
-    def get_sam_features(self, dl, item, to_upload):
+    def get_sam_features(self, dl, item):
         self.cache_item(item=item)
         embedding = self.cache_items_dict[item.id].image_embeddings
         bytearray_data = embedding.cpu().numpy().tobytes()  # float32
