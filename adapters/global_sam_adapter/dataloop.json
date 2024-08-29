@@ -139,38 +139,6 @@
             ]
           },
           {
-            "name": "track",
-            "description": "Sam Video Tracker",
-            "input": [
-              {
-                "name": "dl",
-                "type": "Json"
-              },
-              {
-                "name": "item_stream_url",
-                "type": "Json"
-              },
-              {
-                "name": "bbs",
-                "type": "Json"
-              },
-              {
-                "name": "start_frame",
-                "type": "Json"
-              },
-              {
-                "name": "frame_duration",
-                "type": "Json"
-              }
-            ],
-            "output": [
-              {
-                "name": "output_dict",
-                "type": "Json"
-              }
-            ]
-          },
-          {
             "name": "predict_interactive_editing",
             "description": "Predict Interactive Editing",
             "input": [
