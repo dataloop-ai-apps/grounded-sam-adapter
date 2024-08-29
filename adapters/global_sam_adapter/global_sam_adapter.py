@@ -139,7 +139,8 @@ class Runner(dl.BaseServiceRunner):
     # Semantic studio function
     def get_sam_features(self, dl, item):
         self.cache_item(item=item)
-        embedding = self.cache_items_dict[item.id].image_embeddings
+
+        embedding = self.cache_items_dict[item.id].image_embed
         bytearray_data = embedding.cpu().numpy().tobytes()  # float32
         base64_str = base64.b64encode(bytearray_data).decode('utf-8')
         if not os.path.isdir('tmp'):
