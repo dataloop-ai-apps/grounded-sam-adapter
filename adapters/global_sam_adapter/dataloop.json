@@ -12,16 +12,7 @@
   "components": {
     "toolbars": [
       {
-        "displayName": "SAM2 Tracker",
-        "invoke": {
-          "type": "function",
-          "namespace": "global-sam.global-sam.track"
-        },
-        "location": "videoTracker",
-        "icon": "icon-dl-video-filled"
-      },
-      {
-        "displayName": "SAM2 Tracker NEW",
+        "displayName": "AI Tracker",
         "invoke": {
           "type": "function",
           "namespace": "global-sam.global-sam.track_new"
@@ -33,7 +24,7 @@
         "displayName": "Box to Segmentation",
         "invoke": {
           "type": "function",
-          "namespace": "global-sam.global-sam.box_to_seg"
+          "namespace": "global-sam.global-sam.box_to_segmentation"
         },
         "action": "drawAnnotation",
         "location": "studioAnnotation",
@@ -45,6 +36,61 @@
                 "$or": [
                   {
                     "type": "box"
+                  }
+                ]
+              }
+            },
+            {
+              "entityType": "item",
+              "filter": {
+                "$and": [
+                  {
+                    "metadata.system.mimetype": "image/*"
+                  },
+                  {
+                    "hidden": false
+                  },
+                  {
+                    "type": "file"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "displayName": "Box to Polygon",
+        "invoke": {
+          "type": "function",
+          "namespace": "global-sam.global-sam.box_to_polygon"
+        },
+        "action": "drawAnnotation",
+        "location": "studioAnnotation",
+        "conditions": {
+          "resources": [
+            {
+              "entityType": "annotation",
+              "filter": {
+                "$or": [
+                  {
+                    "type": "box"
+                  }
+                ]
+              }
+            },
+            {
+              "entityType": "item",
+              "filter": {
+                "$and": [
+                  {
+                    "metadata.system.mimetype": "image/*"
+                  },
+                  {
+                    "hidden": false
+                  },
+                  {
+                    "type": "file"
                   }
                 ]
               }
@@ -152,8 +198,8 @@
             "output": []
           },
           {
-            "name": "box_to_seg",
-            "description": "Box to Seg",
+            "name": "box_to_segmentation",
+            "description": "Box to Semantic Segmentation",
             "input": [
               {
                 "name": "dl",
@@ -166,10 +212,30 @@
               {
                 "name": "annotations",
                 "type": "Json[]"
+              }
+            ],
+            "output": [
+              {
+                "name": "annotation_response",
+                "type": "Annotation[]"
+              }
+            ]
+          },
+          {
+            "name": "box_to_polygon",
+            "description": "Box to Polygon",
+            "input": [
+              {
+                "name": "dl",
+                "type": "Json"
               },
               {
-                "name": "return_type",
-                "type": "String"
+                "name": "item",
+                "type": "Item"
+              },
+              {
+                "name": "annotations",
+                "type": "Json[]"
               }
             ],
             "output": [

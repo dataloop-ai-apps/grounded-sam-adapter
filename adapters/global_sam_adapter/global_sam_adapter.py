@@ -381,7 +381,20 @@ class Runner(dl.BaseServiceRunner):
             raise
         return output_dict
 
-    # ToolBar?
+    def box_to_segmentation(self,
+                            dl,
+                            item: dl.Item,
+                            annotations,
+                            progress: dl.Progress = None) -> list:
+        return self.box_to_seg(dl=dl, item=item, annotations=annotations, return_type='Semantic', progress=progress)
+
+    def box_to_polygon(self,
+                       dl,
+                       item: dl.Item,
+                       annotations,
+                       progress: dl.Progress = None) -> list:
+        return self.box_to_seg(dl=dl, item=item, annotations=annotations, return_type='Polygon', progress=progress)
+
     def box_to_seg(self,
                    dl,
                    item: dl.Item,
@@ -500,8 +513,8 @@ class Runner(dl.BaseServiceRunner):
             # The model can also take a box as input, provided in xyxy format.
             left = int(np.maximum(bb[0]['x'], 0))
             top = int(np.maximum(bb[0]['y'], 0))
-            right = int(np.minimum(bb[1]['x'], image_params.original_size[1]))
-            bottom = int(np.minimum(bb[1]['y'], image_params.original_size[0]))
+            right = int(np.minimum(bb[1]['x'], image_params.orig_hw[1]))
+            bottom = int(np.minimum(bb[1]['y'], image_params.orig_hw[0]))
             # input_box = np.array([bb[0]['x'], bb[0]['y'], bb[1]['x'], bb[1]['y']])
             input_box = np.array([left, top, right, bottom])
         else:
