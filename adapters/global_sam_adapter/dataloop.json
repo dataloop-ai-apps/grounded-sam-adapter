@@ -15,7 +15,7 @@
         "displayName": "AI Tracker",
         "invoke": {
           "type": "function",
-          "namespace": "global-sam.global-sam.track_new"
+          "namespace": "global-sam.global-sam.track"
         },
         "location": "videoTracker",
         "icon": "icon-dl-video-filled"
@@ -139,7 +139,7 @@
             ]
           },
           {
-            "name": "track_new",
+            "name": "track",
             "description": "Sam Video Tracker",
             "input": [
               {
