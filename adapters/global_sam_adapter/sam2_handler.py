@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 from PIL.Image import Image
+import PIL
 
 from sam2.modeling.sam2_base import SAM2Base
 
@@ -107,7 +108,12 @@ class DataloopSamPredictor:
         else:
             raise NotImplementedError("Image format not supported")
 
-        input_image = self._transforms(image)
+        try:
+            input_image = self._transforms(image)
+        except RuntimeError:
+            image = PIL.Image.fromarray(image).convert("RGB")
+            input_image = self._transforms(image)
+
         input_image = input_image[None, ...].to(self.device)
 
         assert (

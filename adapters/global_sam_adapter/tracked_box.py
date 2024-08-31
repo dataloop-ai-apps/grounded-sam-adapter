@@ -64,7 +64,7 @@ class AsyncVideoFrameLoader:
 
     def __getitem__(self, index):
         if self.exception is not None:
-            raise RuntimeError("Failure in frame loading thread") from self.exception
+            raise RuntimeError(f"Failure in frame loading thread {self.exception}") from self.exception
 
         img = self.images[index]
         if img is not None:

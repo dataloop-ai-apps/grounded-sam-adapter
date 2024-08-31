@@ -110,6 +110,7 @@ class Runner(dl.BaseServiceRunner):
     def _track_get_item_stream_capture(self, dl, item_stream_url):
         #############
         # replace to webm stream
+        orig_item = None
         if dl.environment() in item_stream_url:
             # is dataloop stream - take webm
             item_id = item_stream_url[item_stream_url.find('items/') + len('items/'): -7]
@@ -128,7 +129,7 @@ class Runner(dl.BaseServiceRunner):
                 # take webm if exists
                 item_stream_url = item_stream_url.replace(item_id, webm_id)
         ############
-        return cv2.VideoCapture('{}?jwt={}'.format(item_stream_url, dl.token()))
+        return cv2.VideoCapture('{}?jwt={}'.format(item_stream_url, dl.token())), orig_item
 
     @staticmethod
     def _track_calc_new_size(height, width, max_size):
@@ -136,6 +137,12 @@ class Runner(dl.BaseServiceRunner):
 
         width, height = int(width / ratio), int(height / ratio)
         return width, height
+
+    @staticmethod
+    def _get_max_frame_duration(item, frame_duration, start_frame):
+        if start_frame + frame_duration > int(item.metadata['system']['ffmpeg']['nb_read_frames']):
+            frame_duration = int(item.metadata['system']['ffmpeg']['nb_read_frames']) - start_frame
+        return frame_duration
 
     # Semantic studio function
     def get_sam_features(self, dl, item):
@@ -239,7 +246,10 @@ class Runner(dl.BaseServiceRunner):
 
         logger.info(f'GPU memory usage: {self.get_gpu_memory()}[mb]')
 
-        cap = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
+        cap, orig_item = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
+        frame_duration = self._get_max_frame_duration(item=orig_item,
+                                                      frame_duration=frame_duration,
+                                                      start_frame=start_frame)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
         image_size = 1024  # must be same height and width
@@ -307,7 +317,10 @@ class Runner(dl.BaseServiceRunner):
             logger.info('[Tracker] video url: {}'.format(item_stream_url))
             max_size = 640
             tic_get_cap = time.time()
-            cap = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
+            cap, orig_item = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
+            frame_duration = self._get_max_frame_duration(item=orig_item,
+                                                          frame_duration=frame_duration,
+                                                          start_frame=start_frame)
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
             frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
