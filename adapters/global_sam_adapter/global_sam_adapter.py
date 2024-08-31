@@ -190,6 +190,7 @@ class Runner(dl.BaseServiceRunner):
 
     def _track_get_item_stream_capture(self, dl, item_stream_url):
         #############
+        orig_item = None
         # replace to webm stream
         if dl.environment() in item_stream_url:
             # is dataloop stream - take webm
@@ -209,7 +210,7 @@ class Runner(dl.BaseServiceRunner):
                 # take webm if exists
                 item_stream_url = item_stream_url.replace(item_id, webm_id)
         ############
-        return cv2.VideoCapture('{}?jwt={}'.format(item_stream_url, dl.token()))
+        return cv2.VideoCapture('{}?jwt={}'.format(item_stream_url, dl.token())), orig_item
 
     @staticmethod
     def _track_calc_new_size(height, width, max_size):
@@ -316,12 +317,21 @@ class Runner(dl.BaseServiceRunner):
         self._get_image_feature(inference_state, frame_idx=0, batch_size=1)
         return inference_state
 
+    @staticmethod
+    def _get_max_frame_duration(item, frame_duration, start_frame):
+        if start_frame + frame_duration > int(item.metadata['system']['ffmpeg']['nb_read_frames']):
+            frame_duration = int(item.metadata['system']['ffmpeg']['nb_read_frames']) - start_frame
+        return frame_duration
+
     def track(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
 
         free, total, used = self.get_gpu_memory()
         logger.info(f'GPU memory - total: {total}, used: {used}, free: {free}')
 
-        cap = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
+        cap, orig_item = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
+        frame_duration = self._get_max_frame_duration(item=orig_item,
+                                                      frame_duration=frame_duration,
+                                                      start_frame=start_frame)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
         image_size = 1024  # must be same height and width
