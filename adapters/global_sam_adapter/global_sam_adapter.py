@@ -1,6 +1,8 @@
+from PIL import Image
 import urllib.request
 import collections
 import subprocess
+import threading
 import pydantic
 import datetime
 import logging
@@ -8,20 +10,99 @@ import base64
 import torch
 import json
 import time
+import tqdm
 import os
 import cv2
 import dtlpy as dl
-
 import numpy as np
 
 from sam2.build_sam import build_sam2, build_sam2_video_predictor
 from sam2.sam2_video_predictor import SAM2VideoPredictor
 
 from adapters.global_sam_adapter.sam2_handler import DataloopSamPredictor
-from adapters.global_sam_adapter.tracked_box import TrackedBox, Bbox, AsyncVideoFrameLoader
 
 logger = logging.getLogger('[GLOBAL-SAM]')
 logger.setLevel('INFO')
+
+
+class AsyncVideoFrameLoader:
+    """
+    A list of video frames to be load asynchronously without blocking session start.
+    """
+
+    def __init__(
+            self,
+            cap,
+            num_frames,
+            image_size,
+            offload_video_to_cpu,
+            img_mean,
+            img_std,
+            compute_device,
+    ):
+        self.cap = cap
+        self.image_size = image_size
+        self.offload_video_to_cpu = offload_video_to_cpu
+        self.img_mean = img_mean
+        self.img_std = img_std
+        # items in `self.images` will be loaded asynchronously
+        self.images = [None] * num_frames
+        # catch and raise any exceptions in the async loading thread
+        self.exception = None
+        # video_height and video_width be filled when loading the first image
+        self.video_height = None
+        self.video_width = None
+        self.compute_device = compute_device
+
+        # load the first frame to fill video_height and video_width and also
+        # to cache it (since it's most likely where the user will click)
+        self.__getitem__(0)
+
+        # load the rest of frames asynchronously without blocking the session start
+        def _load_frames():
+            try:
+                for n in tqdm.tqdm(range(len(self.images)), desc="frame loading (JPEG)"):
+                    self.__getitem__(n)
+            except Exception as e:
+                self.exception = e
+
+        self.thread = threading.Thread(target=_load_frames, daemon=True)
+        self.thread.start()
+
+    @staticmethod
+    def _load_img_as_tensor(img_pil, image_size):
+        img_np = np.array(img_pil.convert("RGB").resize((image_size, image_size)))
+        if img_np.dtype == np.uint8:  # np.uint8 is expected for JPEG images
+            img_np = img_np / 255.0
+        else:
+            raise RuntimeError(f"Unknown image dtype: {img_np.dtype}")
+        img = torch.from_numpy(img_np).permute(2, 0, 1)
+        video_width, video_height = img_pil.size  # the original video size
+        return img, video_height, video_width
+
+    def __getitem__(self, index):
+        if self.exception is not None:
+            raise RuntimeError("Failure in frame loading thread") from self.exception
+
+        img = self.images[index]
+        if img is not None:
+            return img
+
+        ret, frame = self.cap.read()
+        img, video_height, video_width = self._load_img_as_tensor(img_pil=Image.fromarray(frame),
+                                                                  image_size=self.image_size)
+        self.video_height = video_height
+        self.video_width = video_width
+        # normalize by mean and std
+        img -= self.img_mean
+        img /= self.img_std
+        if not self.offload_video_to_cpu:
+            img = img.to(self.compute_device, non_blocking=True)
+        self.images[index] = img
+        return img
+
+    def __len__(self):
+        return len(self.images)
 
 
 class CachedItem(pydantic.BaseModel):
@@ -70,16 +151,16 @@ class Runner(dl.BaseServiceRunner):
 
     @staticmethod
     def get_gpu_memory():
-        output_to_list = lambda x: x.decode('ascii').split('\n')[:-1]
-        COMMAND = "nvidia-smi --query-gpu=memory.used --format=csv"
-        try:
-            memory_use_info = output_to_list(subprocess.check_output(COMMAND.split(),
-                                                                     stderr=subprocess.STDOUT))[1:]
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError("command '{}' return with error (code {}): {}".format(e.cmd, e.returncode, e.output))
-        memory_use_values = [int(x.split()[0]) for i, x in enumerate(memory_use_info)]
-        # print(memory_use_values)
-        return memory_use_values
+        command = "nvidia-smi --query-gpu=memory.free --format=csv"
+        info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+        free = [int(x.split()[0]) for i, x in enumerate(info)]
+        command = "nvidia-smi --query-gpu=memory.total --format=csv"
+        info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+        total = [int(x.split()[0]) for i, x in enumerate(info)]
+        command = "nvidia-smi --query-gpu=memory.used --format=csv"
+        info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+        used = [int(x.split()[0]) for i, x in enumerate(info)]
+        return free, total, used
 
     @staticmethod
     def progress_update(progress, message):
@@ -110,7 +191,6 @@ class Runner(dl.BaseServiceRunner):
     def _track_get_item_stream_capture(self, dl, item_stream_url):
         #############
         # replace to webm stream
-        orig_item = None
         if dl.environment() in item_stream_url:
             # is dataloop stream - take webm
             item_id = item_stream_url[item_stream_url.find('items/') + len('items/'): -7]
@@ -129,7 +209,7 @@ class Runner(dl.BaseServiceRunner):
                 # take webm if exists
                 item_stream_url = item_stream_url.replace(item_id, webm_id)
         ############
-        return cv2.VideoCapture('{}?jwt={}'.format(item_stream_url, dl.token())), orig_item
+        return cv2.VideoCapture('{}?jwt={}'.format(item_stream_url, dl.token()))
 
     @staticmethod
     def _track_calc_new_size(height, width, max_size):
@@ -137,12 +217,6 @@ class Runner(dl.BaseServiceRunner):
 
         width, height = int(width / ratio), int(height / ratio)
         return width, height
-
-    @staticmethod
-    def _get_max_frame_duration(item, frame_duration, start_frame):
-        if start_frame + frame_duration > int(item.metadata['system']['ffmpeg']['nb_read_frames']):
-            frame_duration = int(item.metadata['system']['ffmpeg']['nb_read_frames']) - start_frame
-        return frame_duration
 
     # Semantic studio function
     def get_sam_features(self, dl, item):
@@ -244,12 +318,10 @@ class Runner(dl.BaseServiceRunner):
 
     def track(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
 
-        logger.info(f'GPU memory usage: {self.get_gpu_memory()}[mb]')
+        free, total, used = self.get_gpu_memory()
+        logger.info(f'GPU memory - total: {total}, used: {used}, free: {free}')
 
-        cap, orig_item = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
-        frame_duration = self._get_max_frame_duration(item=orig_item,
-                                                      frame_duration=frame_duration,
-                                                      start_frame=start_frame)
+        cap = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
         image_size = 1024  # must be same height and width
@@ -297,128 +369,27 @@ class Runner(dl.BaseServiceRunner):
                         video_segments[bbox_id][start_frame + out_frame_idx] = None
         return video_segments
 
-    # Tracker
-    def track_old(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
-        """
-        :param item_stream_url:  item.stream for Dataloop item, url for json video links
-        :param bbs: dictionary of annotation.id : BB
-        :param start_frame:
-        :param frame_duration:
-        :param progress:
-        :return:
-        """
-        try:
-            logger.info(f'GPU memory usage: {self.get_gpu_memory()}[mb]')
-
-            if not isinstance(bbs, dict):
-                raise ValueError('input "bbs" must be a dictionary of {id:bbox}')
-            logger.info('[Tracker] Started')
-
-            logger.info('[Tracker] video url: {}'.format(item_stream_url))
-            max_size = 640
-            tic_get_cap = time.time()
-            cap, orig_item = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
-            frame_duration = self._get_max_frame_duration(item=orig_item,
-                                                          frame_duration=frame_duration,
-                                                          start_frame=start_frame)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-            frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-            new_width, new_height = self._track_calc_new_size(height=frame_height, width=frame_width, max_size=max_size)
-            x_factor = frame_width / new_width
-            y_factor = frame_height / new_height
-            runtime_get_cap = time.time() - tic_get_cap
-            logger.info('[Tracker] starting from {} to {}'.format(start_frame, start_frame + frame_duration))
-
-            logger.info('[Tracker] received bbs(xyxy): {}'.format(bbs))
-            runtime_load_frame = list()
-            runtime_track = list()
-
-            tic_total = time.time()
-            output_dict = {bbox_id: dict() for bbox_id, _ in bbs.items()}
-            states_dict = {bbox_id: TrackedBox(Bbox.from_xyxy(bb[0]['x'] / x_factor,
-                                                              bb[0]['y'] / y_factor,
-                                                              bb[1]['x'] / x_factor,
-                                                              bb[1]['y'] / y_factor),
-                                               max_age=self.MAX_AGE) for bbox_id, bb in bbs.items()}
-
-            logger.info('[Tracker] going to process {} frames'.format(frame_duration))
-            for i_frame in range(1, frame_duration):
-                logger.info(f'GPU memory usage: {self.get_gpu_memory()}[mb]')
-
-                logger.info(f'[Tracker] start processing frame #{start_frame + i_frame}')
-                tic = time.time()
-                ret, frame = cap.read()
-                states_dict_flag = all(bb.gone for bb in states_dict.values())
-                if not ret or states_dict_flag:
-                    logger.info(f"[Tracker] stopped at frame {i_frame}: "
-                                f"opencv frame read :{ret}, all bbs gone: {states_dict_flag}")
-                    break
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                image_params: dict = self.predictor.set_image(image=cv2.resize(frame, (new_width, new_height)))
-
-                runtime_load_frame.append(time.time() - tic)
-
-                tic = time.time()
-                for bbox_id, bb in bbs.items():
-                    logger.info(f'GPU memory usage: {self.get_gpu_memory()}[mb]')
-
-                    # track
-                    states_dict[bbox_id].track(sam=self.predictor,
-                                               image_params=image_params,
-                                               thresh=self.THRESH,
-                                               min_area=self.MIN_AREA)
-                    bbox = states_dict[bbox_id].bbox
-                    if bbox is None:
-                        logger.info('NOT Found tracking BB')
-                        output_dict[bbox_id][start_frame + i_frame] = None
-                    else:
-                        logger.info('Found tracking BB')
-                        output_dict[bbox_id][start_frame + i_frame] = dl.Box(top=int(np.round(bbox.y * y_factor)),
-                                                                             left=int(np.round(bbox.x * x_factor)),
-                                                                             bottom=int(np.round(bbox.y2 * y_factor)),
-                                                                             right=int(np.round(bbox.x2 * x_factor)),
-                                                                             label='dummy').to_coordinates(color=None)
-
-                t = time.time() - tic
-                runtime_track.append(t)
-                logger.info(f'[Tracker] start processing frame #{start_frame + i_frame} in {t:.2f}[s]')
-
-            runtime_total = time.time() - tic_total
-            fps = frame_duration / (runtime_total + 1e-6)
-            logger.info('[Tracker] Finished.')
-            logger.info('[Tracker] Runtime information: \n'
-                        f'Total runtime: {runtime_total:.2f}[s]\n'
-                        f'FPS: {fps:.2f}fps\n'
-                        f'Get url capture object: {runtime_get_cap:.2f}[s]\n'
-                        f'Total track time: {np.sum(runtime_load_frame) + np.sum(runtime_track):.2f}[s]\n'
-                        f'Mean load per frame: {np.mean(runtime_load_frame):.2f}\n'
-                        f'Mean track per frame: {np.mean(runtime_track):.2f}')
-        except Exception:
-            logger.exception('Failed during track:')
-            raise
-        return output_dict
-
     def box_to_segmentation(self,
                             dl,
                             item: dl.Item,
                             annotations,
                             progress: dl.Progress = None) -> list:
-        return self.box_to_seg(dl=dl, item=item, annotations=annotations, return_type='Semantic', progress=progress)
+        return self.sam_predict_box(dl=dl, item=item, annotations=annotations, return_type='Semantic',
+                                    progress=progress)
 
     def box_to_polygon(self,
                        dl,
                        item: dl.Item,
                        annotations,
                        progress: dl.Progress = None) -> list:
-        return self.box_to_seg(dl=dl, item=item, annotations=annotations, return_type='Polygon', progress=progress)
+        return self.sam_predict_box(dl=dl, item=item, annotations=annotations, return_type='Polygon', progress=progress)
 
-    def box_to_seg(self,
-                   dl,
-                   item: dl.Item,
-                   annotations,
-                   return_type: str = 'segment',
-                   progress: dl.Progress = None) -> list:
+    def sam_predict_box(self,
+                        dl,
+                        item: dl.Item,
+                        annotations,
+                        return_type: str = 'segment',
+                        progress: dl.Progress = None) -> list:
         """
 
         :param dl: DTLPY sdk instance
@@ -465,7 +436,7 @@ class Runner(dl.BaseServiceRunner):
             #######################################
             mask = masks[0]
             model_info = {
-                'name': 'siammask',
+                'name': 'sam2',
                 'confidence': 1.0
             }
 
@@ -526,7 +497,6 @@ class Runner(dl.BaseServiceRunner):
         logger.info(f'Running prediction...')
         # get prediction
         tic_2 = time.time()
-        results = None
         if bb is not None:
             # The model can also take a box as input, provided in xyxy format.
             left = int(np.maximum(bb[0]['x'], 0))
@@ -562,7 +532,7 @@ class Runner(dl.BaseServiceRunner):
         # push new annotation
         logger.info(f'Creating new predicted mask...')
         tic_3 = time.time()
-        builder = item.annotations.builder()  # type: dl.AnnotationCollection
+        builder: dl.AnnotationCollection = item.annotations.builder()
         # boxed_mask = masks[0][bb[0]['y']:bb[1]['y'], bb[0]['x']:bb[1]['x']]
         boxed_mask = masks[0][input_box[1]:input_box[3], input_box[0]:input_box[2]]
         builder.add(annotation_definition=dl.Segmentation(geo=boxed_mask > 0, label='dummy'))
