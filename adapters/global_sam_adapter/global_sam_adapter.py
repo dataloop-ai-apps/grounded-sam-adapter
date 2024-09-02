@@ -99,14 +99,15 @@ class AsyncVideoFrameLoader:
 
         ret, frame = self.cap.read()
         max_retry = 20
-        while not ret:
+        while not ret and max_retry > 0:
             print(f'reading frame, retry {20 - max_retry}')
             time.sleep(0.2)
             max_retry -= 1
             ret, frame = self.cap.read()
 
-        if frame is None:
+        if not ret:
             raise RuntimeError(f"Failed to read frame {index}")
+
         img, video_height, video_width = self._load_img_as_tensor(img_pil=Image.fromarray(frame),
                                                                   image_size=self.image_size)
         self.video_height = video_height
