@@ -339,14 +339,14 @@ class Runner(dl.BaseServiceRunner):
         logger.info(f"Setting cap to start frame {start_frame}")
         start_time = time.time()
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        end_time = start_time - time.time()
+        end_time = time.time() - start_time
         max_retries = 3
-        while end_time > 30 and max_retries > 0:
+        while end_time >= 30 and max_retries > 0:
             logger.info(f"Retrying to set cap to start frame {start_frame}, retries left: {max_retries}")
             cap, _ = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
             start_time = time.time()
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-            end_time = start_time - time.time()
+            end_time = time.time() - start_time
             max_retries -= 1
         if end_time > 30:
             raise RuntimeError(f'Failed to get video stream {start_frame}')
