@@ -58,6 +58,7 @@ class AsyncVideoFrameLoader:
         # to cache it (since it's most likely where the user will click)
         cap: cv2.VideoCapture
         max_retry = 20
+        # wait for the video capture to be opened
         while not cap.isOpened():
             time.sleep(0.2)
             max_retry -= 1
@@ -97,6 +98,16 @@ class AsyncVideoFrameLoader:
             return img
 
         ret, frame = self.cap.read()
+        max_retry = 20
+        while not ret:
+            time.sleep(0.2)
+            max_retry -= 1
+            if max_retry == 0:
+                raise RuntimeError(f"Failed to read frame {index}")
+            ret, frame = self.cap
+
+        if frame is None:
+            raise RuntimeError(f"Failed to read frame {index}")
         img, video_height, video_width = self._load_img_as_tensor(img_pil=Image.fromarray(frame),
                                                                   image_size=self.image_size)
         self.video_height = video_height
