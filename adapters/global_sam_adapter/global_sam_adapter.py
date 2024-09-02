@@ -68,6 +68,7 @@ class AsyncVideoFrameLoader:
 
         self.thread = threading.Thread(target=_load_frames, daemon=True)
         self.thread.start()
+        self.thread.join()
 
     @staticmethod
     def _load_img_as_tensor(img_pil, image_size):
@@ -82,7 +83,7 @@ class AsyncVideoFrameLoader:
 
     def __getitem__(self, index):
         if self.exception is not None:
-            raise RuntimeError("Failure in frame loading thread") from self.exception
+            raise RuntimeError(f"Failure in frame loading thread {self.exception}") from self.exception
 
         img = self.images[index]
         if img is not None:
@@ -314,6 +315,13 @@ class Runner(dl.BaseServiceRunner):
         inference_state["tracking_has_started"] = False
         inference_state["frames_already_tracked"] = {}
         # Warm up the visual backbone and cache the image feature on frame 0
+        max_retries = 20
+        while inference_state["images"][0] is None:
+            time.sleep(0.2)
+            max_retries -= 1
+        if inference_state["images"][0] is None:
+            raise RuntimeError(f"Failed to load the video frame")
+
         self._get_image_feature(inference_state, frame_idx=0, batch_size=1)
         return inference_state
 
