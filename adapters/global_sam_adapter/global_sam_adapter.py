@@ -315,9 +315,9 @@ class Runner(dl.BaseServiceRunner):
         inference_state["tracking_has_started"] = False
         inference_state["frames_already_tracked"] = {}
         # Warm up the visual backbone and cache the image feature on frame 0
-        max_retries = 10
+        max_retries = 20
         while inference_state["images"][0] is None:
-            time.sleep(0.5)
+            time.sleep(0.2)
             max_retries -= 1
         if inference_state["images"][0] is None:
             raise RuntimeError(f"Failed to load the video frame")
