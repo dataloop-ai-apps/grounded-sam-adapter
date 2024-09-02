@@ -56,14 +56,7 @@ class AsyncVideoFrameLoader:
 
         # load the first frame to fill video_height and video_width and also
         # to cache it (since it's most likely where the user will click)
-        cap: cv2.VideoCapture
-        max_retry = 20
         # wait for the video capture to be opened
-        while not cap.isOpened():
-            time.sleep(0.2)
-            max_retry -= 1
-            if max_retry == 0:
-                raise RuntimeError(f"Failed to open the video capture")
         self.__getitem__(0)
 
         # load the rest of frames asynchronously without blocking the session start
@@ -98,15 +91,6 @@ class AsyncVideoFrameLoader:
             return img
 
         ret, frame = self.cap.read()
-        max_retry = 20
-        while not ret and max_retry > 0:
-            print(f'reading frame, retry {20 - max_retry}')
-            time.sleep(0.2)
-            max_retry -= 1
-            ret, frame = self.cap.read()
-
-        if not ret:
-            raise RuntimeError(f"Failed to read frame {index}")
 
         img, video_height, video_width = self._load_img_as_tensor(img_pil=Image.fromarray(frame),
                                                                   image_size=self.image_size)
@@ -333,12 +317,6 @@ class Runner(dl.BaseServiceRunner):
         inference_state["tracking_has_started"] = False
         inference_state["frames_already_tracked"] = {}
         # Warm up the visual backbone and cache the image feature on frame 0
-        max_retries = 20
-        while inference_state["images"][0] is None:
-            time.sleep(0.2)
-            max_retries -= 1
-        if inference_state["images"][0] is None:
-            raise RuntimeError(f"Failed to load the video frame")
 
         self._get_image_feature(inference_state, frame_idx=0, batch_size=1)
         return inference_state
@@ -358,7 +336,19 @@ class Runner(dl.BaseServiceRunner):
         frame_duration = self._get_max_frame_duration(item=orig_item,
                                                       frame_duration=frame_duration,
                                                       start_frame=start_frame)
+        start_time = time.time()
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        end_time = start_time - time.time()
+        max_retries = 3
+        while end_time > 30 and max_retries > 0:
+            cap, _ = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
+            start_time = time.time()
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            end_time = start_time - time.time()
+            max_retries -= 1
+        if end_time > 30:
+            raise RuntimeError('Failed to get video stream')
+
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
         image_size = 1024  # must be same height and width
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
