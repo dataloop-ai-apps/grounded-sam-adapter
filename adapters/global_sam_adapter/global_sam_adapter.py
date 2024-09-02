@@ -56,6 +56,7 @@ class AsyncVideoFrameLoader:
 
         # load the first frame to fill video_height and video_width and also
         # to cache it (since it's most likely where the user will click)
+        time.sleep(0.5)
         self.__getitem__(0)
 
         # load the rest of frames asynchronously without blocking the session start
