@@ -394,7 +394,11 @@ class Runner(dl.BaseServiceRunner):
                             color=None)
                     else:
                         logger.info('NOT Found tracking BB')
-                        video_segments[bbox_id][start_frame + out_frame_idx] = None
+                        # Don't remove
+                        # Taking annotation from last frame if not found
+                        video_segments[bbox_id][start_frame + out_frame_idx] = video_segments[bbox_id][
+                            start_frame + out_frame_idx - 1]
+
         return video_segments
 
     def box_to_segmentation(self,
