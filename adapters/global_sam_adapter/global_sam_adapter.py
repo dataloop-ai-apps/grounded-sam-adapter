@@ -56,7 +56,13 @@ class AsyncVideoFrameLoader:
 
         # load the first frame to fill video_height and video_width and also
         # to cache it (since it's most likely where the user will click)
-        time.sleep(0.5)
+        cap: cv2.VideoCapture
+        max_retry = 20
+        while not cap.isOpened():
+            time.sleep(0.2)
+            max_retry -= 1
+            if max_retry == 0:
+                raise RuntimeError(f"Failed to open the video capture")
         self.__getitem__(0)
 
         # load the rest of frames asynchronously without blocking the session start
