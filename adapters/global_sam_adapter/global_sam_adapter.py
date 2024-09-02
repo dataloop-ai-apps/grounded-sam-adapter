@@ -336,19 +336,21 @@ class Runner(dl.BaseServiceRunner):
         frame_duration = self._get_max_frame_duration(item=orig_item,
                                                       frame_duration=frame_duration,
                                                       start_frame=start_frame)
+        logger.info(f"Setting cap to start frame {start_frame}")
         start_time = time.time()
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         end_time = start_time - time.time()
         max_retries = 3
         while end_time > 30 and max_retries > 0:
+            logger.info(f"Retrying to set cap to start frame {start_frame}, retries left: {max_retries}")
             cap, _ = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
             start_time = time.time()
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             end_time = start_time - time.time()
             max_retries -= 1
         if end_time > 30:
-            raise RuntimeError('Failed to get video stream')
-
+            raise RuntimeError(f'Failed to get video stream {start_frame}')
+        logger.info("Setting cap to start frame - Done")
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
         image_size = 1024  # must be same height and width
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
