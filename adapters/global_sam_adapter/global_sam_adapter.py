@@ -226,13 +226,19 @@ class Runner(dl.BaseServiceRunner):
     def get_sam_features(self, dl, item):
         self.cache_item(item=item)
 
-        embedding = self.cache_items_dict[item.id].image_embed
-        bytearray_data = embedding.cpu().numpy().tobytes()  # float32
-        base64_str = base64.b64encode(bytearray_data).decode('utf-8')
+        bytearray_data = self.cache_items_dict[item.id].image_embed.cpu().numpy().tobytes()  # float32
+        base64_bytearray_data = base64.b64encode(bytearray_data).decode('utf-8')
+        high_res_feats_0 = self.cache_items_dict[item.id].high_res_feats[0].cpu().numpy().tobytes()
+        base64_bytearray_high_res_feats_0 = base64.b64encode(high_res_feats_0).decode('utf-8')
+        high_res_feats_1 = self.cache_items_dict[item.id].high_res_feats[1].cpu().numpy().tobytes()
+        base64_bytearray_high_res_feats_1 = base64.b64encode(high_res_feats_1).decode('utf-8')
+        feeds = {'image_embed': base64_bytearray_data,
+                 'high_res_feats_0': base64_bytearray_high_res_feats_0,
+                 'high_res_feats_1': base64_bytearray_high_res_feats_1}
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
         with open(f'tmp/{item.id}.json', 'w') as f:
-            json.dump({'item': base64_str}, f)
+            json.dump(feeds, f)
         features_item = item.dataset.items.upload(local_path=f'tmp/{item.id}.json',
                                                   remote_path='/.dataloop/sam_features',
                                                   overwrite=True,
