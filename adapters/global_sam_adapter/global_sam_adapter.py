@@ -224,6 +224,9 @@ class Runner(dl.BaseServiceRunner):
 
     # Semantic studio function
     def get_sam_features(self, dl, item):
+        free, total, used = self.get_gpu_memory()
+        print(f'Before inference GPU memory - total: {total}, used: {used}, free: {free}')
+
         self.cache_item(item=item)
 
         embedding = self.cache_items_dict[item.id].image_embed
@@ -431,6 +434,9 @@ class Runner(dl.BaseServiceRunner):
         :param progress:
         :return:
         """
+        free, total, used = self.get_gpu_memory()
+        print(f'Before inference GPU memory - total: {total}, used: {used}, free: {free}')
+
         # get item's image
         if 'bot.dataloop.ai' in dl.info()['user_email']:
             raise ValueError('This function cannot run with a bot user')
@@ -518,6 +524,9 @@ class Runner(dl.BaseServiceRunner):
         :return:
         """
         # get item's image
+        free, total, used = self.get_gpu_memory()
+        print(f'Before inference GPU memory - total: {total}, used: {used}, free: {free}')
+
         if 'bot.dataloop.ai' in dl.info()['user_email']:
             raise ValueError('This function cannot run with a bot user')
         tic_1 = time.time()
@@ -535,8 +544,9 @@ class Runner(dl.BaseServiceRunner):
             top = int(np.maximum(bb[0]['y'], 0))
             right = int(np.minimum(bb[1]['x'], image_params.orig_hw[1]))
             bottom = int(np.minimum(bb[1]['y'], image_params.orig_hw[0]))
-            # input_box = np.array([bb[0]['x'], bb[0]['y'], bb[1]['x'], bb[1]['y']])
             input_box = np.array([left, top, right, bottom])
+            if left == right or top == bottom:
+                raise ValueError(f'Bounding box too small, skipping, bbox Dimensions: {input_box}')
         else:
             input_box = None
 
