@@ -396,7 +396,8 @@ export_output
 .dataloop
 
 /scripts
-/artifacts
+*artifacts
 customer_*.*
 *.onnx
 *dataloop_scripts.py
+*venv*
