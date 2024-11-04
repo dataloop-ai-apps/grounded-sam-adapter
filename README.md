@@ -18,6 +18,10 @@ In Dataloop, Grounded sam can be used in multiple applications:
 
 Dataloop offers advanced tools to enhance annotation precision and streamline workflows, leveraging the power of SAM2 models to convert bounding box annotations into segmentation masks. This conversion provides pixel-level classification, which is essential for detailed object recognition tasks.
 
+![alt text](assets/sam2_box_to_segmentation.gif)
+
+
+
 #### The Convert Box to Segmentation feature allows users to:
 
 - **Automatically generate segmentation masks**: Transform bounding boxes into semantic segmentation masks, enabling each pixel within the box to receive a specific label.
@@ -35,6 +39,8 @@ To convert Box annotation to Segmentation:
 
 Dataloop’s Convert Box to Polygon feature, powered by SAM2 models, enhances annotation accuracy by transforming box annotations into precise polygon shapes. This tool converts a selected bounding box into a polygon that closely contours the object within, making it particularly beneficial for objects with irregular shapes where a rectangle may not effectively represent boundaries. 
 
+![alt text](assets/sam2_box_to_polygon.gif)
+
 To convert Box annotation to Polygon:
 
  1. Select the desired bounding box annotation.
@@ -43,7 +49,18 @@ To convert Box annotation to Polygon:
 
 ### Create Auto Segmentation
 
-Auto-segmentation uses a machine-learning algorithm to accelerate semantic segmentation tasks.
+Segmentation feature, which uses machine learning to streamline and enhance the efficiency of semantic segmentation tasks. Here's how SAM2 supports and improves auto-segmentation:
+
+- **Precise Boundary Detection**: Accurately outlines object edges, reducing manual adjustments.
+- **Handling Complex Scenes**: Separates multiple or overlapping objects with ease.
+- **Increased Efficiency**: Speeds up annotation by automating pixel-accurate segmentation, saving time.
+- **Consistency**: Ensures uniform segmentation across frames or multiple items.
+- **Interactive Refinement**: Allows annotators to adjust auto-segmentation for perfect accuracy.
+- **Scalability**: Efficiently manages large datasets, making high-quality segmentation feasible at scale.
+
+![alt text](assets/sam2_auto_segmentation.gif)
+
+To use the Auto Segmentation feature:
 
 1. Select the auto-segmentation tool.
 2. Draw a box around an object to get an initial segmentation.
@@ -57,6 +74,8 @@ Auto-segmentation uses a machine-learning algorithm to accelerate semantic segme
 ### AI Tracker in the Video Annotation Studio
 
 In Dataloop’s Video Annotation Studio, the SAM2 model significantly enhances object tracking through the AI Tracker tool. The SAM2 model, combined with AI-driven tracking, allows annotators to streamline the tracking of objects across video frames, which traditionally requires extensive manual effort.
+
+![alt text](assets/sam2_video_ai_tracker.gif)
 
 Here’s how the SAM2 model improves the annotation process with AI Tracker:
 
