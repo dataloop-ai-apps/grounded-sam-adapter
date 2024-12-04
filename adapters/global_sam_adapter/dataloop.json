@@ -9,6 +9,9 @@
     "gitUrl": "https://github.com/dataloop-ai-apps/grounded-sam-adapter.git",
     "gitTag": "0.1.48"
   },
+  "attributes": {
+    "License": "Apache 2.0"
+  },
   "components": {
     "toolbars": [
       {
