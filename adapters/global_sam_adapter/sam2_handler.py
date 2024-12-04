@@ -95,7 +95,6 @@ class DataloopSamPredictor:
         Arguments:
           image (np.ndarray or PIL Image): The input image to embed in RGB format. The image should be in HWC format if np.ndarray, or WHC format if PIL Image
           with pixel values in [0, 255].
-          image_format (str): The color format of the image, in ['RGB', 'BGR'].
         """
         self.reset_predictor()
         # Transform the image to the form expected by the model
@@ -244,7 +243,7 @@ class DataloopSamPredictor:
 
     def predict(
             self,
-            image_properties:dict,
+            image_properties: dict,
             point_coords: Optional[np.ndarray] = None,
             point_labels: Optional[np.ndarray] = None,
             box: Optional[np.ndarray] = None,
@@ -341,7 +340,7 @@ class DataloopSamPredictor:
     @torch.no_grad()
     def _predict(
             self,
-            image_properties:dict,
+            image_properties: dict,
             point_coords: Optional[torch.Tensor],
             point_labels: Optional[torch.Tensor],
             boxes: Optional[torch.Tensor] = None,
