@@ -237,7 +237,7 @@
         "moduleName": "global-sam",
         "useUserJwt": true,
         "runtime": {
-          "podType": "gpu-t4",
+          "podType": "gpu-t4-m",
           "concurrency": 10,
           "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6",
           "autoscaler": {
