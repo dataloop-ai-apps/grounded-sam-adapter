@@ -1,0 +1,108 @@
+{
+    "name": "grounded-yolo-world-sam2",
+    "displayName": "Grounded YoloWorld SAM2",
+    "version": "0.0.1",
+    "scope": "project",
+    "description": "YOLOWorld SAM combines YOLO's real-time object detection with SAM2's precise segmentation to enable fast and accurate object identification and segmentation in diverse scenarios.",
+    "attributes": {
+      "Provider": "Meta",
+      "License": "GPL 3.0",
+      "Category": "Model",
+      "Computer Vision": "Object Detection",
+      "Media Type": ["Image"],
+      "Deployed By": "Dataloop"
+    },
+    "components": {
+      "computeConfigs": [
+        {
+          "name": "grounded-yolo-world-sam2-deploy",
+          "runtime": {
+            "podType": "regular-s",
+            "concurrency": 1,
+            "runnerImage": "gcr.io/viewo-g/piper/agent/gpu/yolo-world:0.0.1",
+            "autoscaler": {
+              "type": "rabbitmq",
+              "minReplicas": 0,
+              "maxReplicas": 2,
+              "queueLength": 100
+            }
+          }
+        }
+      ],
+      "modules": [
+        {
+          "name": "grounded-yolo-world-sam2-module",
+          "entryPoint": "grounded_yoloworld_sam/grounded_adapter.py",
+          "className": "GroundedYOLOSAMAdapter",
+          "computeConfig": "grounded-yolo-world-sam2-deploy",
+          "description": "Grounded YoloWorld SAM2 Module",
+          "initInputs": [
+            {
+              "type": "Model",
+              "name": "model_entity"
+            }
+          ],
+          "functions": [
+            {
+              "name": "predict_items",
+              "input": [
+                {
+                  "type": "Item[]",
+                  "name": "items",
+                  "description": "List of items to run inference on"
+                }
+              ],
+              "output": [
+                {
+                  "type": "Item[]",
+                  "name": "items",
+                  "description": "The same input images for prediction."
+                },
+                {
+                  "type": "Annotation[]",
+                  "name": "annotations",
+                  "description": "The predicted annotations."
+                }
+              ],
+              "displayName": "Predict Items",
+              "displayIcon": "",
+              "description": "Function to run grounded YOLO-World SAM2 inference on items"
+            },
+            {
+              "name": "predict_dataset",
+              "input": [
+                {
+                  "type": "Dataset",
+                  "name": "dataset",
+                  "description": ""
+                },
+                {
+                  "type": "Json",
+                  "name": "filters",
+                  "description": "Dataloop Filter DQL"
+                }
+              ],
+              "output": [],
+              "displayName": "Predict Dataset",
+              "displayIcon": "",
+              "description": "Function to run grounded YOLO-World SAM2 inference on a dataset."
+            }
+          ]
+        }
+      ],
+      "models": [
+        {
+          "name": "grounded-yolo-world-sam2",
+          "moduleName": "grounded-yolo-world-sam2-module",
+          "scope": "project",
+          "status": "pre-trained",
+          "inputType": "image",
+          "outputType": "segment",
+          "description": "Grounded YoloWorld SAM2 Model",
+          "configuration": {
+            "yolo_weights_filename": "yolov8s-worldv2.pt"
+          }
+        }
+      ]
+    }
+  }
