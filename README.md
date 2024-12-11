@@ -90,3 +90,9 @@ To use the AI Tracker feature:
 3. Select the **AI Tracker** from the list.
 4. Select the Bounding Box tool and start annotating an object.
 5. Once annotation is complete, save it, then click the Forward Frame icon to view the annotation across multiple frames
+
+## Acknowledgments
+
+This project builds upon the open-source library [SAM2](https://github.com/facebookresearch/sam2), created by Meta Platforms, Inc. and affiliates. SAM2 is licensed under the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
+The SAM2 library enables advanced segmentation tasks for images and videos using the Segment Anything Model (SAM). For more details, visit the [SAM2 GitHub repository](https://github.com/facebookresearch/sam2).
