@@ -1,5 +1,5 @@
 import dtlpy as dl
-from adapters.sam_adapter.sam2_handler import DataloopSamPredictor
+from sam_adapter.sam2_handler import DataloopSamPredictor
 from sam2.build_sam import build_sam2
 import torch
 import logging
