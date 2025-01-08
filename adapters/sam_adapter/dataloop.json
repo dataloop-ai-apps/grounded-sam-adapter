@@ -1,7 +1,7 @@
 {
     "name": "sam2",
     "displayName": "SAM2",
-    "version": "0.0.1",
+    "version": "0.1.49",
     "scope": "project",
     "description": "",
     "attributes": {
@@ -47,7 +47,7 @@
       "modules": [
         {
           "name": "sam2-module",
-          "entryPoint": "sam_adapter.py",
+          "entryPoint": "adapters/sam_adapter/sam_adapter.py",
           "className": "ModelAdapter",
           "computeConfig": "sam2-deploy",
           "description": "SAM2 Module",
