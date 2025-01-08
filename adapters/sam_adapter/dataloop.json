@@ -47,7 +47,7 @@
       "modules": [
         {
           "name": "sam2-module",
-          "entryPoint": "adapters/sam_adapter/sam_adapter.py",
+          "entryPoint": "sam_adapter.py",
           "className": "ModelAdapter",
           "computeConfig": "sam2-deploy",
           "description": "SAM2 Module",
