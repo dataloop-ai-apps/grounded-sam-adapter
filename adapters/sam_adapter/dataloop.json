@@ -1,256 +1,186 @@
 {
-  "name": "global-sam-adapter",
-  "displayName": "Global SAM2 Adapter",
-  "description": "SAM2 adapter for global functions",
-  "version": "0.1.49",
-  "scope": "public",
-  "codebase": {
-    "type": "git",
-    "gitUrl": "https://github.com/dataloop-ai-apps/grounded-sam-adapter.git",
-    "gitTag": "0.1.49"
-  },
-  "attributes": {
-    "License": "Apache 2.0"
-  },
-  "components": {
-    "toolbars": [
-      {
-        "displayName": "AI Tracker",
-        "invoke": {
-          "type": "function",
-          "namespace": "global-sam.global-sam.track"
-        },
-        "location": "videoTracker",
-        "icon": "icon-dl-video-filled"
-      },
-      {
-        "displayName": "Box to Segmentation",
-        "invoke": {
-          "type": "function",
-          "namespace": "global-sam.global-sam.box_to_segmentation"
-        },
-        "action": "drawAnnotation",
-        "location": "studioAnnotation",
-        "conditions": {
-          "resources": [
-            {
-              "entityType": "annotation",
-              "filter": {
-                "$or": [
-                  {
-                    "type": "box"
-                  }
-                ]
-              }
-            },
-            {
-              "entityType": "item",
-              "filter": {
-                "$and": [
-                  {
-                    "metadata.system.mimetype": "image/*"
-                  },
-                  {
-                    "hidden": false
-                  },
-                  {
-                    "type": "file"
-                  }
-                ]
-              }
+    "name": "sam2",
+    "displayName": "SAM2",
+    "version": "0.0.1",
+    "scope": "project",
+    "description": "",
+    "attributes": {
+      "Provider": "Meta",
+      "License": "Apache 2.0",
+      "Category": "Model",
+      "Computer Vision": "Object Detection",
+      "Media Type": ["Image"],
+      "Deployed By": "Dataloop"
+    },
+    "components": {
+      "computeConfigs": [
+        {
+          "name": "sam2-deploy",
+          "runtime": {
+            "podType": "regular-s",
+            "concurrency": 1,
+            "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6",
+            "autoscaler": {
+              "type": "rabbitmq",
+              "minReplicas": 0,
+              "maxReplicas": 2,
+              "queueLength": 100
             }
-          ]
-        }
-      },
-      {
-        "displayName": "Box to Polygon",
-        "invoke": {
-          "type": "function",
-          "namespace": "global-sam.global-sam.box_to_polygon"
+          }
         },
-        "action": "drawAnnotation",
-        "location": "studioAnnotation",
-        "conditions": {
-          "resources": [
-            {
-              "entityType": "annotation",
-              "filter": {
-                "$or": [
-                  {
-                    "type": "box"
-                  }
-                ]
-              }
-            },
-            {
-              "entityType": "item",
-              "filter": {
-                "$and": [
-                  {
-                    "metadata.system.mimetype": "image/*"
-                  },
-                  {
-                    "hidden": false
-                  },
-                  {
-                    "type": "file"
-                  }
-                ]
-              }
-            }
-          ]
+        {
+        "name": "sam2-train-evaluate",
+        "runtime": {
+          "podType": "gpu-t4",
+          "concurrency": 1,
+          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6",
+          "autoscaler": {
+            "type": "rabbitmq",
+            "minReplicas": 0,
+            "maxReplicas": 2,
+            "queueLength": 100
+          }
         }
       }
-    ],
-    "modules": [
-      {
-        "name": "global-sam",
-        "entryPoint": "adapters/global_sam_adapter/global_sam_adapter.py",
-        "className": "Runner",
-        "initInputs": [],
-        "functions": [
+
+      ],
+      "modules": [
+        {
+          "name": "sam2-module",
+          "entryPoint": "adapters/sam_adapter/sam_adapter.py",
+          "className": "ModelAdapter",
+          "computeConfig": "sam2-deploy",
+          "description": "SAM2 Module",
+          "initInputs": [
+            {
+              "type": "Model",
+              "name": "model_entity"
+            }
+          ],
+          "functions": [
           {
-            "name": "track",
-            "description": "Sam Video Tracker",
+            "name": "evaluate_model",
+            "computeConfig": "sam2-train-evaluate",
             "input": [
               {
-                "name": "dl",
-                "type": "Json"
+                "type": "Model",
+                "name": "model",
+                "description": "Dataloop Model Entity"
               },
               {
-                "name": "item_stream_url",
-                "type": "Json"
+                "type": "Dataset",
+                "name": "dataset",
+                "description": "Dataloop Dataset Entity"
               },
               {
-                "name": "bbs",
-                "type": "Json"
-              },
-              {
-                "name": "start_frame",
-                "type": "Json"
-              },
-              {
-                "name": "frame_duration",
-                "type": "Json"
+                "type": "Json",
+                "name": "filters",
+                "description": "Dataloop Filter DQL"
               }
             ],
             "output": [
               {
-                "name": "output_dict",
-                "type": "Json"
-              }
-            ]
-          },
-          {
-            "name": "predict_interactive_editing",
-            "description": "Predict Interactive Editing",
-            "input": [
-              {
-                "name": "dl",
-                "type": "Json"
+                "type": "Model",
+                "name": "model",
+                "description": "Dataloop Model Entity"
               },
               {
-                "name": "item",
-                "type": "Item"
-              },
-              {
-                "name": "points",
-                "type": "Json"
-              },
-              {
-                "name": "bb",
-                "type": "Json"
-              },
-              {
-                "name": "color",
-                "type": "Json"
+                "type": "Dataset",
+                "name": "dataset",
+                "description": "Dataloop Dataset Entity"
               }
             ],
-            "output": []
+            "displayName": "Evaluate a Model",
+            "displayIcon": "",
+            "description": "Function to evaluate SAM2 model performance"
           },
           {
-            "name": "box_to_segmentation",
-            "description": "Box to Semantic Segmentation",
+            "name": "predict_items",
             "input": [
               {
-                "name": "dl",
-                "type": "Json"
+                "type": "Item[]",
+                "name": "items",
+                "description": "List of items to run inference on"
+              }
+            ],
+            "output": [
+              {
+                "type": "Item[]",
+                "name": "items",
+                "description": "The same input images for prediction."
               },
               {
-                "name": "item",
-                "type": "Item"
-              },
-              {
+                "type": "Annotation[]",
                 "name": "annotations",
-                "type": "Json[]"
+                "description": "The predicted annotations."
+              }
+            ],
+            "displayName": "Predict Items",
+            "displayIcon": "",
+            "description": "Function to run SAM2 inference on items"
+          },
+          {
+            "name": "train_model",
+            "computeConfig": "sam2-train-evaluate",
+            "input": [
+              {
+                "type": "Model",
+                "name": "model",
+                "description": "Dataloop Model Entity"
               }
             ],
             "output": [
               {
-                "name": "annotation_response",
-                "type": "Annotation[]"
+                "type": "Model",
+                "name": "model",
+                "description": "Dataloop Model Entity"
               }
-            ]
+            ],
+            "displayName": "Train a Model",
+            "displayIcon": "",
+            "description": "Function to train SAM2 model"
           },
           {
-            "name": "box_to_polygon",
-            "description": "Box to Polygon",
+            "name": "predict_dataset",
             "input": [
               {
-                "name": "dl",
-                "type": "Json"
+                "type": "Dataset",
+                "name": "dataset",
+                "description": ""
               },
               {
-                "name": "item",
-                "type": "Item"
-              },
-              {
-                "name": "annotations",
-                "type": "Json[]"
+                "type": "Json",
+                "name": "filters",
+                "description": "Dataloop Filter DQL"
               }
             ],
             "output": [
-              {
-                "name": "annotation_response",
-                "type": "Annotation[]"
-              }
-            ]
-          },
-          {
-            "name": "get_sam_features",
-            "description": "Get SAM2 features",
-            "input": [
-              {
-                "name": "dl",
-                "type": "Json"
-              },
-              {
-                "name": "item",
-                "type": "Item"
-              }
             ],
-            "output": []
+            "displayName": "Predict Dataset",
+            "displayIcon": "",
+            "description": "Function to run SAM2 inference on a dataset"
           }
         ]
       }
     ],
-    "services": [
-      {
-        "name": "global-sam",
-        "moduleName": "global-sam",
-        "useUserJwt": true,
-        "runtime": {
-          "podType": "gpu-t4-m",
-          "concurrency": 10,
-          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6",
-          "autoscaler": {
-            "minReplicas": 1,
-            "maxReplicas": 7,
-            "queueLength": 10
+      "models": [
+        {
+          "name": "sam2",
+          "moduleName": "sam2-module",
+          "scope": "project",
+          "status": "pre-trained",
+          "inputType": "image",
+          "outputType": "segment",
+          "description": "SAM2 Model",
+          "configuration": {
+            "num_epochs": 100,
+            "batch_size": 4,
+            "learning_rate": 0.00001,
+            "weight_decay": 0.00004,
+            "state_dict": "model.torch",
+            "was_trained": false
           }
-        },
-        "executionTimeout": 3600
-      }
-    ]
+        }
+      ]
+    }
   }
-}
