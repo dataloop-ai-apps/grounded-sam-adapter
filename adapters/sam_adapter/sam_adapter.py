@@ -168,7 +168,7 @@ class ModelAdapter(dl.BaseModelAdapter):
 
     def load(self, local_path, **kwargs):
         if self.configuration.get('was_trained', 'False') is True:
-            checkpoint_path = os.path.join(local_path, "model.torch")
+            checkpoint_path = os.path.join(local_path, "best_sam2_model.torch")
             map_location = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             self.predictor.model.load_state_dict(torch.load(checkpoint_path, map_location=map_location))
             logger.info(f"Model loaded from {checkpoint_path}.")
