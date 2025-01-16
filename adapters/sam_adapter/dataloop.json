@@ -177,7 +177,7 @@
             "batch_size": 4,
             "learning_rate": 0.00001,
             "weight_decay": 0.00004,
-            "state_dict": "model.torch",
+            "state_dict": "best_sam2_model.torch",
             "was_trained": false,
             "training_type": ["point", "box"]
           }

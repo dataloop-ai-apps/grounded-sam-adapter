@@ -247,8 +247,8 @@ class ModelAdapter(dl.BaseModelAdapter):
 
         :param local_path: `str` directory path in local FileSystem
         """
-        torch.save(self.predictor.model.state_dict(), os.path.join(local_path, "model.torch"))
-        self.configuration['state_dict'] = 'model.torch'
+        torch.save(self.predictor.model.state_dict(), os.path.join(local_path, "best_sam2_model.torch"))
+        self.configuration['state_dict'] = 'best_sam2_model.torch'
         self.configuration['was_trained'] = True
 
     def set_train_mode(self):
