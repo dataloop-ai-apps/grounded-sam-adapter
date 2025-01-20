@@ -54,13 +54,13 @@ class SAMDataset(Dataset):
 
         # Extract prompts
         points, point_labels = [], []
-        boxes, box_labels = [], []
+        boxes = []
 
         if 'point' in self.training_type:
             points, point_labels = self._extract_points_from_masks(masks)
 
         if 'box' in self.training_type:
-            boxes, box_labels = self._extract_boxes_from_annotation(annotation_data)
+            boxes = self._extract_boxes_from_annotation(annotation_data)
 
         # Combine prompts
         resized_masks = self._resize_and_pad_masks(masks, image.shape[:2])
@@ -68,9 +68,9 @@ class SAMDataset(Dataset):
         return (
             torch.tensor(image, dtype=torch.float32).permute(2, 0, 1),
             torch.tensor(resized_masks, dtype=torch.float32),
-            torch.tensor(boxes, dtype=torch.float32) if 'box' in self.training_type else None,
-            torch.tensor(points, dtype=torch.float32) if 'point' in self.training_type else None,
-            torch.tensor(point_labels, dtype=torch.float32) if 'point' in self.training_type else None,
+            torch.tensor(boxes, dtype=torch.float32) if boxes else torch.empty((0,)),
+            torch.tensor(points, dtype=torch.float32) if points else torch.empty((0,)),
+            torch.tensor(point_labels, dtype=torch.float32) if point_labels else torch.empty((0,)),
             item_id
         )
 
@@ -119,15 +119,14 @@ class SAMDataset(Dataset):
         return points, labels
 
     def _extract_boxes_from_annotation(self, annotation_data):
-        boxes, labels = [], []
+        boxes = []
         for annotation in annotation_data['annotations']:
             if annotation['type'] == 'box':
                 coords = annotation['coordinates']
                 x_min, y_min = int(coords[0]['x']), int(coords[0]['y'])
                 x_max, y_max = int(coords[1]['x']), int(coords[1]['y'])
                 boxes.append([x_min, y_min, x_max, y_max])
-                labels.append(1)
-        return boxes, labels
+        return boxes
 
     def _resize_and_pad_masks(self, masks, image_size):
         resized_masks = []
