@@ -193,8 +193,7 @@ class ModelAdapter(dl.BaseModelAdapter):
                                                      multimask_output=False)
 
                 mask = masks[0]
-                # annotation_definition = dl.Segmentation(geo=mask, label=annotation.label)
-                annotation_definition = dl.Polygon.from_segmentation(mask=mask, label="NA")
+                annotation_definition = dl.Segmentation(geo=mask, label="NA")
 
                 image_annotations.add(annotation_definition=annotation_definition,
                                       model_info={'name': self.model_entity.name,
@@ -215,15 +214,12 @@ class ModelAdapter(dl.BaseModelAdapter):
                                                          multimask_output=False)
 
                     mask = masks[0]
-                    # annotation_definition = dl.Segmentation(geo=mask, label=annotation.label)
-                    annotation_definition = dl.Polygon.from_segmentation(mask=mask, label=annotation.label,
-                                                                         attributes=annotation.attributes)
+                    annotation_definition = dl.Segmentation(geo=mask, label=annotation.label)
 
                     image_annotations.add(annotation_definition=annotation_definition,
                                           model_info={'name': self.model_entity.name,
                                                       'model_id': self.model_entity.id,
-                                                      'confidence': 1},
-                                          metadata=annotation.metadata)
+                                                      'confidence': 1})
             batch_annotations.append(image_annotations)
         logger.info("Finished running SAM2 predictions")
         return batch_annotations
@@ -453,8 +449,8 @@ class ModelAdapter(dl.BaseModelAdapter):
         train_dataset = SAMDataset(train_path, training_type)
         val_dataset = SAMDataset(validation_path, training_type)
 
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
         optimizer = torch.optim.AdamW(params=self.predictor.model.parameters(), lr=learning_rate,
                                       weight_decay=weight_decay)
