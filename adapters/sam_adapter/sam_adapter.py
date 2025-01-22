@@ -13,18 +13,25 @@ import io
 from torch.utils.data import Dataset, DataLoader
 import glob
 import json
+from torch.utils.data import Dataset
+import glob
+import torch
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import base64
+from PIL import Image, ImageDraw
+import io
 
 logger = logging.getLogger('[SAM2-Adapter]')
+logging.getLogger('PIL').setLevel(logging.WARNING)
 
 
 class SAMDataset(Dataset):
-    def __init__(self, data_dir, training_type):
+    def __init__(self, data_dir):
         """
-        :param data_dir: Path to the folder containing downloaded images and annotations.
-        :param training_type: 'point' or 'box' for different prompt types.
+        :param data_dir: Path to the folder containing images and annotations.
         """
         self.data_dir = data_dir
-        self.training_type = training_type
 
         # Load all image paths
         self.image_paths = sorted(glob.glob(os.path.join(data_dir, '**', '*.jpeg'), recursive=True) +
@@ -43,103 +50,178 @@ class SAMDataset(Dataset):
         # Load image
         image = cv2.imread(image_path, cv2.IMREAD_COLOR)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = self._preprocess_image(image)
+        original_height, original_width = image.shape[:2]
+        image = self._preprocess_image(image, (1024, 1024))
 
         # Load and parse annotations
         with open(annotation_path, 'r') as f:
             annotation_data = json.load(f)
         item_id = annotation_data.get('id', 'unknown_id')
 
-        masks = self._load_masks_from_annotation(annotation_data, image.shape[:2], item_id)
+        # Generate mask with unique labels
+        mask, num_masks, boxes = self._load_from_annotation(annotation_data, original_width, original_height)
 
-        # Extract prompts
-        points, point_labels = [], []
-        boxes = []
+        # Generate random points from the mask
+        points = self._extract_points_from_mask(mask)
 
-        if 'point' in self.training_type:
-            points, point_labels = self._extract_points_from_masks(masks)
+        # Ensure points are not empty
+        if len(points) == 0:
+            points = np.array([[0, 0]])  # Placeholder point if no points are found
 
-        if 'box' in self.training_type:
-            boxes = self._extract_boxes_from_annotation(annotation_data)
+        # Prepare binary mask for PyTorch (add channel dimension)
+        binary_mask = np.expand_dims(mask, axis=-1)
+        binary_mask = binary_mask.transpose((2, 0, 1))
 
-        # Combine prompts
-        resized_masks = self._resize_and_pad_masks(masks, image.shape[:2])
+        points = np.expand_dims(points, axis=1)
+
+        boxes_str = json.dumps(boxes)
 
         return (
             torch.tensor(image, dtype=torch.float32).permute(2, 0, 1),
-            torch.tensor(resized_masks, dtype=torch.float32),
-            torch.tensor(boxes, dtype=torch.float32) if boxes else torch.empty((0,)),
-            torch.tensor(points, dtype=torch.float32) if points else torch.empty((0,)),
-            torch.tensor(point_labels, dtype=torch.float32) if point_labels else torch.empty((0,)),
+            torch.tensor(binary_mask, dtype=torch.float32),
+            torch.tensor(points, dtype=torch.float32),
+            boxes_str,
+            num_masks,
             item_id
         )
 
-    def _preprocess_image(self, image):
-        # Resize and pad image to 1024x1024
-        r = min(1024 / image.shape[1], 1024 / image.shape[0])
-        image = cv2.resize(image, (int(image.shape[1] * r), int(image.shape[0] * r)))
+    def _preprocess_image(self, image, target_size):
+        """
+        Resize and pad the image to the target size.
+        """
+        h, w = image.shape[:2]
+        r = min(target_size[1] / w, target_size[0] / h)
+        new_w, new_h = int(w * r), int(h * r)
+        resized_image = cv2.resize(image, (new_w, new_h))
 
-        if image.shape[0] < 1024:
-            image = np.pad(image, ((0, 1024 - image.shape[0]), (0, 0), (0, 0)), mode="constant")
-        if image.shape[1] < 1024:
-            image = np.pad(image, ((0, 0), (0, 1024 - image.shape[1]), (0, 0)), mode="constant")
+        # Padding to fit the target size
+        delta_w, delta_h = target_size[1] - new_w, target_size[0] - new_h
+        top, bottom = delta_h // 2, delta_h - (delta_h // 2)
+        left, right = delta_w // 2, delta_w - (delta_w // 2)
+        padded_image = cv2.copyMakeBorder(resized_image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-        return image
+        return padded_image
 
-    def _load_masks_from_annotation(self, annotation_data, image_size, item_id):
-        masks = []
+    def _load_from_annotation(self, annotation_data, original_width, original_height):
+        """
+        Combines all masks into a single mask with unique labels for each region and retrieves boxes annotations.
+        """
+        target_size = (1024, 1024)
+        scaling_factor = min(target_size[1] / original_width, target_size[0] / original_height)
+        new_width, new_height = int(original_width * scaling_factor), int(original_height * scaling_factor)
+
+        combined_mask = np.zeros(target_size, dtype=np.uint8)
+        current_label = 1
+
+        boxes = []
+
         if not annotation_data.get('annotations'):
-            logger.warning(f"[Item ID: {item_id}] No annotations found in the file. Skipping this image.")
-            return []
+            return combined_mask, 0
+
         for annotation in annotation_data['annotations']:
+            mask = np.zeros(target_size, dtype=np.uint8)
             if annotation['type'] == 'binary':
-                encoded_data = annotation['coordinates'].split(",")[1]  # Remove prefix
+                encoded_data = annotation['coordinates'].split(",")[1]
                 binary_data = base64.b64decode(encoded_data)
                 mask = Image.open(io.BytesIO(binary_data)).convert("L")
-                mask = mask.resize(image_size[::-1])  # Ensure size matches the image
+                mask = mask.resize((new_width, new_height), Image.NEAREST)
                 mask = np.array(mask) > 0
-                masks.append(mask)
-
             elif annotation['type'] == 'segment':
-                polygon_points = [(p['x'], p['y']) for p in annotation['coordinates'][0]]
-                polygon_mask = Image.new("L", image_size, 0)
+                polygon_points = [(int(p['x'] * scaling_factor), int(p['y'] * scaling_factor))
+                                  for p in annotation['coordinates'][0]]
+                polygon_mask = Image.new("L", (new_width, new_height), 0)
                 ImageDraw.Draw(polygon_mask).polygon(polygon_points, outline=1, fill=1)
-                masks.append(np.array(polygon_mask).astype(np.uint8))
-
-        return masks
-
-    def _extract_points_from_masks(self, masks):
-        points, labels = [], []
-        for mask in masks:
-            coords = np.argwhere(mask)
-            if coords.size > 0:
-                random_coord = coords[np.random.randint(len(coords))]
-                points.append([random_coord[1], random_coord[0]])  # (x, y)
-                labels.append(1)
-        return points, labels
-
-    def _extract_boxes_from_annotation(self, annotation_data):
-        boxes = []
-        for annotation in annotation_data['annotations']:
-            if annotation['type'] == 'box':
+                mask = np.array(polygon_mask).astype(bool)
+            elif annotation['type'] == 'box':
                 coords = annotation['coordinates']
                 x_min, y_min = int(coords[0]['x']), int(coords[0]['y'])
                 x_max, y_max = int(coords[1]['x']), int(coords[1]['y'])
                 boxes.append([x_min, y_min, x_max, y_max])
-        return boxes
+            else:
+                continue
 
-    def _resize_and_pad_masks(self, masks, image_size):
-        resized_masks = []
-        r = min(1024 / image_size[0], 1024 / image_size[1])
-        for mask in masks:
-            resized_mask = cv2.resize(mask.astype(np.uint8), (int(mask.shape[1] * r), int(mask.shape[0] * r)),
-                                      interpolation=cv2.INTER_NEAREST)
-            if resized_mask.shape[0] < 1024:
-                resized_mask = np.pad(resized_mask, ((0, 1024 - resized_mask.shape[0]), (0, 0)), mode="constant")
-            if resized_mask.shape[1] < 1024:
-                resized_mask = np.pad(resized_mask, ((0, 0), (0, 1024 - resized_mask.shape[1])), mode="constant")
-            resized_masks.append(resized_mask)
-        return resized_masks
+            # Pad mask to target size
+            delta_w = target_size[1] - new_width
+            delta_h = target_size[0] - new_height
+            top, bottom = delta_h // 2, delta_h - (delta_h // 2)
+            left, right = delta_w // 2, delta_w - (delta_w // 2)
+            padded_mask = np.pad(mask, ((top, bottom), (left, right)), mode="constant")
+            # Ensure padded_mask matches the target size
+            padded_mask = padded_mask[:target_size[0], :target_size[1]]
+            # Assign unique label
+            combined_mask[padded_mask > 0] = current_label
+            current_label += 1
+
+        return combined_mask, current_label - 1, boxes
+
+    def _extract_points_from_mask(self, mask):
+        """
+        Extract random points from each labeled region in the mask.
+        """
+        points = []
+        eroded_mask = cv2.erode((mask > 0).astype(np.uint8), np.ones((5, 5), np.uint8), iterations=1)
+
+        labels = np.unique(mask)[1:]  # Skip background (0)
+        for label in labels:
+            coords = np.argwhere((mask == label) & eroded_mask)
+            if coords.size > 0:
+                # Select a random point
+                random_coord = coords[np.random.randint(len(coords))]
+                points.append([random_coord[1], random_coord[0]])  # (x, y)
+
+        return points
+
+    def visualize_sample(self, idx):
+        """
+        Visualizes the image, binary mask, and overlay with points to verify alignment.
+        :param idx: Index of the sample to visualize.
+        """
+        image, binary_mask, points, _, _, _ = self[idx]
+        image = image.permute(1, 2, 0).numpy().astype(np.uint8)  # Convert image to HWC format for visualization
+        binary_mask = binary_mask.squeeze(0).numpy()  # Remove channel dimension
+        points = points.numpy()  # Convert points to NumPy array
+
+        # Normalize mask for visualization
+        normalized_mask = (binary_mask / binary_mask.max()) * 255
+
+        # Adjust points for plotting (convert x, y -> y, x)
+        adjusted_points = [[int(point[1]), int(point[0])] for point in points]  # Swap to (row, col) for plotting
+
+        # Plotting
+        plt.figure(figsize=(15, 5))
+
+        # Original Image
+        plt.subplot(1, 3, 1)
+        plt.title('Original Image')
+        plt.imshow(image)
+        plt.axis('off')
+
+        # Segmentation Mask with Points
+        plt.subplot(1, 3, 2)
+        plt.title('Binarized Mask with Points')
+        plt.imshow(normalized_mask, cmap='gray')
+        # Plot points on the mask
+        for point in adjusted_points:
+            plt.scatter(point[1], point[0], c='red', s=100, edgecolor='black',
+                        label='Point' if point == adjusted_points[0] else "")
+
+        plt.axis('off')
+
+        # Overlay Mask and Points on Image
+        plt.subplot(1, 3, 3)
+        plt.title('Overlay with Points')
+        plt.imshow(image)
+        plt.imshow(normalized_mask, cmap='jet', alpha=0.5)  # Use alpha to overlay
+        # Plot points on the overlay
+        for point in adjusted_points:
+            plt.scatter(point[1], point[0], c='red', s=100, edgecolor='black',
+                        label='Point' if point == adjusted_points[0] else "")
+
+        plt.axis('off')
+
+        plt.tight_layout()
+        plt.legend(loc='lower left', bbox_to_anchor=(1, 0), frameon=False)
+        plt.show()
 
 
 class ModelAdapter(dl.BaseModelAdapter):
@@ -244,7 +326,7 @@ class ModelAdapter(dl.BaseModelAdapter):
         """
         torch.save(self.predictor.model.state_dict(), os.path.join(local_path, "best_sam2_model.torch"))
         self.configuration['state_dict'] = 'best_sam2_model.torch'
-        self.configuration['was_trained'] = True
+        self.configuration['was_trained'] = True if self.model_entity.status == "trained" else False
 
     def set_train_mode(self):
         """
@@ -286,54 +368,21 @@ class ModelAdapter(dl.BaseModelAdapter):
 
         return low_res_masks, prd_scores
 
-    def _prepare_prompts(self, image_properties, boxes=None, points=None, point_labels=None, training_type=None):
-        """
-        Prepare prompts (points and/or boxes) for the SAM model.
-
-        :param image_properties: Image properties set by the predictor.
-        :param boxes: Bounding box prompts.
-        :param points: Point prompts.
-        :param point_labels: Labels for point prompts.
-        :param training_type: List specifying the training type(s): ["point"], ["box"], or ["point", "box"].
-        :return: mask_input, unnorm_coords, input_labels, embeddings
-        """
-
-        # Initialize empty prompts if missing
-        if boxes is None or len(boxes) == 0:
-            boxes = None
-        if points is None or len(points) == 0:
-            points = None
-            point_labels = None
-
-        # Prepare combined prompts
-        return self.predictor._prep_prompts(
-            image_properties=image_properties,
-            point_coords=points,
-            point_labels=point_labels,
-            box=boxes,
-            mask_logits=None,
-            normalize_coords=True,
-        )
-
-    def _process_epoch_dataloader(self, dataloader, training_type, scaler, optimizer, mode="train"):
+    def _process_epoch_dataloader(self, dataloader, scaler, optimizer, mode="train"):
         total_loss = 0.0
         num_batches = 0
 
+        # Set model mode (train/eval)
         self.set_train_mode() if mode == "train" else self.set_eval_mode()
 
         for batch in dataloader:
-            images, masks, boxes, points, point_labels, item_ids = batch
+            images, masks, points, boxes_strs, num_masks, item_ids = batch
 
             images = images.to(self.device)
             masks = masks.to(self.device)
+            points = points.to(self.device)
 
-            if "box" in training_type:
-                boxes = boxes.to(self.device)
-
-            if "point" in training_type:
-                points = points.to(self.device)
-                point_labels = point_labels.to(self.device)
-
+            # Use no_grad for validation
             context = torch.no_grad() if mode == "validate" else torch.enable_grad()
 
             with context:
@@ -342,83 +391,75 @@ class ModelAdapter(dl.BaseModelAdapter):
                     valid_images = 0
 
                     for i, image in enumerate(images):
+                        mask = masks[i]
+                        input_point = points[i]
+                        num_mask = num_masks[i]
                         item_id = item_ids[i]
 
+                        # Skip invalid samples
+                        if image is None or mask is None or num_mask == 0:
+                            logger.warning(
+                                f"[Item ID: {item_id}] No valid image or mask found. Skipping this image.")
+                            continue
+
+                        input_label = torch.ones((num_mask, 1), device=self.device)
+
+                        # Prepare the image for the predictor
                         image_np = (image.cpu().permute(1, 2, 0).numpy() * 255).astype(np.uint8)
                         image_properties = self.predictor.set_image(image=image_np)
 
-                        # Skip if "point" but no mask
-                        if "point" in training_type and masks[i].sum() == 0:
-                            logger.warning(
-                                f"[Item ID: {item_id}] "
-                                f"No valid mask found in point-based training. Skipping this image.")
-                            continue
-
-                        # Skip if "box" but no box annotation
-                        if "box" in training_type and (boxes is None or boxes[i].sum() == 0):
-                            logger.warning(
-                                f"[Item ID: {item_id}] "
-                                f"Box-based training specified but no box annotation found. Continuing without box.")
-
-                        # Check if both prompts are missing
-                        box_prompt = boxes[i] if "box" in training_type and boxes[i].sum() > 0 else None
-                        point_prompt = points[i] if "point" in training_type and points[i].sum() > 0 else None
-
-                        if "point" in training_type and "box" in training_type and (
-                                box_prompt is None and point_prompt is None):
-                            logger.warning(
-                                f"[Item ID: {item_id}] Both box and point prompts are missing. Skipping this image.")
-                            continue
-
                         # Prepare prompts
-                        mask_input, unnorm_coords, input_labels, _ = self._prepare_prompts(
+                        mask_input, unnorm_coords, labels, unnorm_box = self.predictor._prep_prompts(
                             image_properties=image_properties,
-                            boxes=box_prompt,
-                            points=point_prompt,
-                            point_labels=point_labels[i] if "point" in training_type else None,
-                            training_type=training_type
+                            point_coords=input_point,
+                            point_labels=input_label,
+                            box=None,
+                            mask_logits=None,
+                            normalize_coords=True,
                         )
 
                         # Generate embeddings
                         sparse_embeddings, dense_embeddings = self.predictor.model.sam_prompt_encoder(
-                            points=(unnorm_coords, input_labels) if point_prompt is not None else None,
-                            boxes=box_prompt,
-                            masks=None,
+                            points=(unnorm_coords, labels), boxes=None, masks=None,
                         )
 
                         # Decode masks
                         low_res_masks, prd_scores = self._decode_masks(sparse_embeddings, dense_embeddings)
-                        prd_masks = self.predictor._transforms.postprocess_masks(low_res_masks,
-                                                                                 self.predictor._orig_hw[-1])
-                        prd_probs = torch.sigmoid(prd_masks[:, 0])
+                        prd_masks = self.predictor._transforms.postprocess_masks(
+                            low_res_masks, self.predictor._orig_hw[-1]
+                        )
+                        prd_probs = torch.sigmoid(prd_masks[:, 0])  # Predicted probabilities
 
-                        # Segmentation loss
-                        seg_loss = (-masks[i] * torch.log(prd_probs + 1e-7) -
-                                    (1 - masks[i]) * torch.log(1 - prd_probs + 1e-7)).mean()
+                        # Segmentation loss (binary cross-entropy)
+                        seg_loss = (-mask * torch.log(prd_probs + 1e-7) -
+                                    (1 - mask) * torch.log(1 - prd_probs + 1e-7)).mean()
 
                         # IoU-based score loss
-                        inter = (masks[i] * (prd_probs > 0.5)).sum()
-                        union = masks[i].sum() + (prd_probs > 0.5).sum() - inter + 1e-7
+                        inter = (mask * (prd_probs > 0.5)).sum()
+                        union = mask.sum() + (prd_probs > 0.5).sum() - inter + 1e-7
                         iou = inter / union
                         score_loss = torch.abs(prd_scores[:, 0] - iou).mean()
 
                         # Total loss
                         total_batch_loss = seg_loss + 0.05 * score_loss
 
-                        # Training step
+                        # Backward pass and optimizer step (only in training mode)
                         if mode == "train":
                             optimizer.zero_grad()
                             scaler.scale(total_batch_loss).backward()
                             scaler.step(optimizer)
                             scaler.update()
 
+                        # Accumulate loss for the batch
                         batch_loss += total_batch_loss.item()
                         valid_images += 1
 
+                    # Average loss per valid image
                     if valid_images > 0:
                         total_loss += batch_loss / valid_images
                         num_batches += 1
 
+        # Return average loss across all batches
         return total_loss / max(num_batches, 1)
 
     def train(self, data_path, output_path, **kwargs):
@@ -426,8 +467,8 @@ class ModelAdapter(dl.BaseModelAdapter):
         learning_rate = self.configuration.get('learning_rate', 1e-5)
         weight_decay = self.configuration.get('weight_decay', 4e-5)
         batch_size = self.configuration.get('batch_size', 4)
-        save_interval = 5
-        patience = 3
+        save_interval = 10
+        patience = 10
         no_improvement_epochs = 0
 
         train_path = os.path.join(data_path, 'train')
@@ -445,9 +486,8 @@ class ModelAdapter(dl.BaseModelAdapter):
             annotation_options=['json']
         )
 
-        training_type = self.configuration.get('training_type', ["point", "box"])
-        train_dataset = SAMDataset(train_path, training_type)
-        val_dataset = SAMDataset(validation_path, training_type)
+        train_dataset = SAMDataset(train_path)
+        val_dataset = SAMDataset(validation_path)
 
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
@@ -459,13 +499,16 @@ class ModelAdapter(dl.BaseModelAdapter):
         best_val_loss = float('inf')
         self.set_train_mode()
         for epoch in range(num_epochs):
+            print(f"Epoch {epoch + 1}/{num_epochs}")
             logger.info(f"Epoch {epoch + 1}/{num_epochs}")
 
-            train_loss = self._process_epoch_dataloader(train_loader, training_type, scaler, optimizer, mode="train")
+            train_loss = self._process_epoch_dataloader(train_loader, scaler, optimizer, mode="train")
             logger.info(f"Epoch {epoch + 1} - Training Loss: {train_loss:.4f}")
+            print(f"Epoch {epoch + 1} - Training Loss: {train_loss:.4f}")
 
-            val_loss = self._process_epoch_dataloader(val_loader, training_type, scaler, optimizer, mode="validate")
+            val_loss = self._process_epoch_dataloader(val_loader, scaler, optimizer, mode="validate")
             logger.info(f"Epoch {epoch + 1} - Validation Loss: {val_loss:.4f}")
+            print(f"Epoch {epoch + 1} - Validation Loss: {val_loss:.4f}")
 
             if (epoch + 1) % save_interval == 0:
                 torch.save(self.predictor.model.state_dict(), f"{output_path}/sam2_model_epoch_{epoch + 1}.torch")
