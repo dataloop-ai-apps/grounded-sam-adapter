@@ -275,6 +275,7 @@ class ModelAdapter(dl.BaseModelAdapter):
                                                      multimask_output=False)
 
                 mask = masks[0]
+                mask = 1 - mask
                 annotation_definition = dl.Segmentation(geo=mask, label="NA")
 
                 image_annotations.add(annotation_definition=annotation_definition,
@@ -395,6 +396,7 @@ class ModelAdapter(dl.BaseModelAdapter):
                         input_point = points[i]
                         num_mask = num_masks[i]
                         item_id = item_ids[i]
+                        input_box = eval(boxes_strs[i])
 
                         # Skip invalid samples
                         if image is None or mask is None or num_mask == 0:
