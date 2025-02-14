@@ -40,12 +40,47 @@ class SAMDataset(Dataset):
         # Load corresponding mask annotations
         self.annotation_paths = sorted(glob.glob(os.path.join(data_dir, '**', '*.json'), recursive=True))
 
+        # Create expanded dataset entries that account for polygons
+        self.dataset_entries = []
+        for img_path, ann_path in zip(self.image_paths, self.annotation_paths):
+            with open(ann_path, 'r') as f:
+                annotation_data = json.load(f)
+
+            # Group annotations by type
+            binary_annotations = None
+            polygon_annotations = []
+
+            if annotation_data.get('annotations'):
+                for ann in annotation_data['annotations']:
+                    if ann['type'] == 'binary':
+                        binary_annotations = ann
+                    elif ann['type'] == 'segment':
+                        polygon_annotations.append(ann)
+
+            # If we have binary annotations, create one entry with all combined
+            if binary_annotations:
+                self.dataset_entries.append({
+                    'image_path': img_path,
+                    'annotation': binary_annotations,
+                    'item_id': annotation_data.get('id', 'unknown_id')
+                })
+
+            # For each polygon, create a separate entry
+            for poly_ann in polygon_annotations:
+                self.dataset_entries.append({
+                    'image_path': img_path,
+                    'annotation': poly_ann,
+                    'item_id': annotation_data.get('id', 'unknown_id')
+                })
+
     def __len__(self):
-        return len(self.image_paths)
+        return len(self.dataset_entries)
 
     def __getitem__(self, idx):
-        image_path = self.image_paths[idx]
-        annotation_path = self.annotation_paths[idx]
+        entry = self.dataset_entries[idx]
+        image_path = entry['image_path']
+        annotation = entry['annotation']
+        item_id = entry['item_id']
 
         # Load image
         image = cv2.imread(image_path, cv2.IMREAD_COLOR)
@@ -53,16 +88,11 @@ class SAMDataset(Dataset):
         original_height, original_width = image.shape[:2]
         image = self._preprocess_image(image, (1024, 1024))
 
-        # Load and parse annotations
-        with open(annotation_path, 'r') as f:
-            annotation_data = json.load(f)
-        item_id = annotation_data.get('id', 'unknown_id')
-
         # Generate mask with unique labels
-        mask, num_masks, boxes = self._load_from_annotation(annotation_data, original_width, original_height)
+        mask = self._load_from_annotation(annotation, original_width, original_height)
 
-        # Generate random points from the mask
-        points = self._extract_points_from_mask(mask)
+        # Generate points from the mask - 3 inside, 3 outside
+        points, point_labels = self._extract_points_from_mask(mask)
 
         # Ensure points are not empty
         if len(points) == 0:
@@ -73,17 +103,45 @@ class SAMDataset(Dataset):
         binary_mask = binary_mask.transpose((2, 0, 1))
 
         points = np.expand_dims(points, axis=1)
-
-        boxes_str = json.dumps(boxes)
+        point_labels = np.expand_dims(point_labels, axis=1)
 
         return (
             torch.tensor(image, dtype=torch.float32).permute(2, 0, 1),
             torch.tensor(binary_mask, dtype=torch.float32),
             torch.tensor(points, dtype=torch.float32),
-            boxes_str,
-            num_masks,
+            torch.tensor(point_labels, dtype=torch.float32),
             item_id
         )
+
+    def _pad_to_size(self, array, target_size, pad_value=0):
+        """
+        Pad array to target size with equal padding on both sides.
+        
+        Args:
+            array: Input array to pad (can be image or mask)
+            target_size: Tuple of (height, width) for target size
+            pad_value: Value to use for padding (0 for masks, (0,0,0) for RGB images)
+            
+        Returns:
+            Padded array of target size
+        """
+        if len(array.shape) == 3:  # For RGB images
+            h, w, c = array.shape
+        else:  # For masks
+            h, w = array.shape
+
+        delta_h = target_size[0] - h
+        delta_w = target_size[1] - w
+
+        top = delta_h // 2
+        bottom = delta_h - top
+        left = delta_w // 2
+        right = delta_w - left
+
+        if len(array.shape) == 3:
+            return cv2.copyMakeBorder(array, top, bottom, left, right, cv2.BORDER_CONSTANT, value=pad_value)
+        else:
+            return np.pad(array, ((top, bottom), (left, right)), mode="constant", constant_values=pad_value)
 
     def _preprocess_image(self, image, target_size):
         """
@@ -94,15 +152,11 @@ class SAMDataset(Dataset):
         new_w, new_h = int(w * r), int(h * r)
         resized_image = cv2.resize(image, (new_w, new_h))
 
-        # Padding to fit the target size
-        delta_w, delta_h = target_size[1] - new_w, target_size[0] - new_h
-        top, bottom = delta_h // 2, delta_h - (delta_h // 2)
-        left, right = delta_w // 2, delta_w - (delta_w // 2)
-        padded_image = cv2.copyMakeBorder(resized_image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
-
+        # Use common padding function
+        padded_image = self._pad_to_size(resized_image, target_size, (0, 0, 0))
         return padded_image
 
-    def _load_from_annotation(self, annotation_data, original_width, original_height):
+    def _load_from_annotation(self, annotation, original_width, original_height):
         """
         Combines all masks into a single mask with unique labels for each region and retrieves boxes annotations.
         """
@@ -110,82 +164,118 @@ class SAMDataset(Dataset):
         scaling_factor = min(target_size[1] / original_width, target_size[0] / original_height)
         new_width, new_height = int(original_width * scaling_factor), int(original_height * scaling_factor)
 
-        combined_mask = np.zeros(target_size, dtype=np.uint8)
-        current_label = 1
+        mask = np.zeros(target_size, dtype=np.uint8)
 
-        boxes = []
+        if annotation['type'] == 'binary':
+            encoded_data = annotation['coordinates'].split(",")[1]
+            binary_data = base64.b64decode(encoded_data)
+            mask = Image.open(io.BytesIO(binary_data)).convert("L")
+            mask = mask.resize((new_width, new_height), Image.NEAREST)
+            mask = np.array(mask) > 0
+        elif annotation['type'] == 'segment':
+            polygon_points = [(int(p['x'] * scaling_factor), int(p['y'] * scaling_factor))
+                              for p in annotation['coordinates'][0]]
+            polygon_mask = Image.new("L", (new_width, new_height), 0)
+            ImageDraw.Draw(polygon_mask).polygon(polygon_points, outline=1, fill=1)
+            mask = np.array(polygon_mask).astype(bool)
+        else:
+            logger.warning(f"Annotation type {annotation['type']} not supported")
+            return mask
 
-        if not annotation_data.get('annotations'):
-            return combined_mask, 0
+        # Use common padding function
+        padded_mask = self._pad_to_size(mask, target_size, 0)
 
-        for annotation in annotation_data['annotations']:
-            mask = np.zeros(target_size, dtype=np.uint8)
-            if annotation['type'] == 'binary':
-                encoded_data = annotation['coordinates'].split(",")[1]
-                binary_data = base64.b64decode(encoded_data)
-                mask = Image.open(io.BytesIO(binary_data)).convert("L")
-                mask = mask.resize((new_width, new_height), Image.NEAREST)
-                mask = np.array(mask) > 0
-            elif annotation['type'] == 'segment':
-                polygon_points = [(int(p['x'] * scaling_factor), int(p['y'] * scaling_factor))
-                                  for p in annotation['coordinates'][0]]
-                polygon_mask = Image.new("L", (new_width, new_height), 0)
-                ImageDraw.Draw(polygon_mask).polygon(polygon_points, outline=1, fill=1)
-                mask = np.array(polygon_mask).astype(bool)
-            elif annotation['type'] == 'box':
-                coords = annotation['coordinates']
-                x_min, y_min = int(coords[0]['x']), int(coords[0]['y'])
-                x_max, y_max = int(coords[1]['x']), int(coords[1]['y'])
-                boxes.append([x_min, y_min, x_max, y_max])
-            else:
-                continue
-
-            # Pad mask to target size
-            delta_w = target_size[1] - new_width
-            delta_h = target_size[0] - new_height
-            top, bottom = delta_h // 2, delta_h - (delta_h // 2)
-            left, right = delta_w // 2, delta_w - (delta_w // 2)
-            padded_mask = np.pad(mask, ((top, bottom), (left, right)), mode="constant")
-            # Ensure padded_mask matches the target size
-            padded_mask = padded_mask[:target_size[0], :target_size[1]]
-            # Assign unique label
-            combined_mask[padded_mask > 0] = current_label
-            current_label += 1
-
-        return combined_mask, current_label - 1, boxes
+        return padded_mask
 
     def _extract_points_from_mask(self, mask):
         """
-        Extract random points from each labeled region in the mask.
+        Extract exactly 3 points inside and 3 points outside the mask.
+        Returns points in (x,y) format.
         """
+        NUM_POINTS = 8  # Number of points to extract for each class
         points = []
-        eroded_mask = cv2.erode((mask > 0).astype(np.uint8), np.ones((5, 5), np.uint8), iterations=1)
+        point_labels = []
 
-        labels = np.unique(mask)[1:]  # Skip background (0)
-        for label in labels:
-            coords = np.argwhere((mask == label) & eroded_mask)
-            if coords.size > 0:
-                # Select a random point
-                random_coord = coords[np.random.randint(len(coords))]
-                points.append([random_coord[1], random_coord[0]])  # (x, y)
+        # Convert mask to binary uint8
+        binary_mask = (mask > 0).astype(np.uint8)
+        h, w = mask.shape
 
-        return points
+        # Create kernels for erosion and dilation
+        kernel_size = max(5, min(mask.shape) // 50)  # Adaptive kernel size
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+
+        # Get inner points (erode to avoid boundary)
+        eroded_mask = cv2.erode(binary_mask, kernel, iterations=1)
+        inside_coords = np.argwhere(eroded_mask > 0)
+
+        # Get outer points (any point outside the mask)
+        outside_mask = binary_mask == 0
+        outside_coords = np.argwhere(outside_mask)
+        # Handle inside points
+        if len(inside_coords) == 0:
+            # If no inside points, use center of mass or regular grid
+            center_y, center_x = np.mean(np.argwhere(binary_mask > 0), axis=0) if np.any(binary_mask) else (
+                h // 2, w // 2)
+            inside_coords = np.array([[int(center_y), int(center_x)]] * NUM_POINTS)
+        elif len(inside_coords) < NUM_POINTS:
+            # If not enough points, duplicate existing ones
+            indices = np.random.choice(len(inside_coords), NUM_POINTS, replace=True)
+            inside_coords = inside_coords[indices]
+        else:
+            # Randomly select points
+            indices = np.random.choice(len(inside_coords), NUM_POINTS, replace=False)
+            inside_coords = inside_coords[indices]
+
+        # Handle outside points
+        if len(outside_coords) == 0:
+            # If no outside points, use corners and midpoints
+            outside_coords = np.array([
+                [0, 0],  # top-left
+                [0, w - 1],  # top-right
+                [h - 1, 0],  # bottom-left
+            ])
+        elif len(outside_coords) < NUM_POINTS:
+            # If not enough points, duplicate existing ones
+            indices = np.random.choice(len(outside_coords), NUM_POINTS, replace=True)
+            outside_coords = outside_coords[indices]
+        else:
+            # Randomly select points
+            indices = np.random.choice(len(outside_coords), NUM_POINTS, replace=False)
+            outside_coords = outside_coords[indices]
+
+        # Add inside points
+        for coord in inside_coords:
+            points.append([coord[1], coord[0]])  # Convert to (x,y) format
+            point_labels.append(1)
+
+        # Add outside points
+        for coord in outside_coords:
+            points.append([coord[1], coord[0]])  # Convert to (x,y) format
+            point_labels.append(0)
+
+        # Convert to numpy arrays
+        points = np.array(points)
+        point_labels = np.array(point_labels)
+
+        # Ensure we have exactly the right number of points
+        assert len(points) == NUM_POINTS * 2, f"Expected {NUM_POINTS * 2} points, got {len(points)}"
+        assert len(point_labels) == NUM_POINTS * 2, f"Expected {NUM_POINTS * 2} labels, got {len(point_labels)}"
+
+        return points, point_labels
 
     def visualize_sample(self, idx):
         """
         Visualizes the image, binary mask, and overlay with points to verify alignment.
         :param idx: Index of the sample to visualize.
         """
-        image, binary_mask, points, _, _, _ = self[idx]
+        image, binary_mask, points, point_labels, item_id = self[idx]
         image = image.permute(1, 2, 0).numpy().astype(np.uint8)  # Convert image to HWC format for visualization
         binary_mask = binary_mask.squeeze(0).numpy()  # Remove channel dimension
-        points = points.numpy()  # Convert points to NumPy array
+        points = points.squeeze(1).numpy()  # Convert points to NumPy array
+        point_labels = point_labels.squeeze(1).numpy()  # Convert labels to NumPy array
 
         # Normalize mask for visualization
         normalized_mask = (binary_mask / binary_mask.max()) * 255
-
-        # Adjust points for plotting (convert x, y -> y, x)
-        adjusted_points = [[int(point[1]), int(point[0])] for point in points]  # Swap to (row, col) for plotting
 
         # Plotting
         plt.figure(figsize=(15, 5))
@@ -194,17 +284,24 @@ class SAMDataset(Dataset):
         plt.subplot(1, 3, 1)
         plt.title('Original Image')
         plt.imshow(image)
+        # Plot points with different colors based on labels
+        for point, label in zip(points, point_labels):
+            color = 'red' if label == 1 else 'blue'  # red for foreground, blue for background
+            plt.scatter(point[0], point[1], c=color, s=100, edgecolor='black',
+                        label=f'{"Foreground" if label == 1 else "Background"}' if point.tolist() == points[
+                            0].tolist() else "")
         plt.axis('off')
 
         # Segmentation Mask with Points
         plt.subplot(1, 3, 2)
         plt.title('Binarized Mask with Points')
         plt.imshow(normalized_mask, cmap='gray')
-        # Plot points on the mask
-        for point in adjusted_points:
-            plt.scatter(point[1], point[0], c='red', s=100, edgecolor='black',
-                        label='Point' if point == adjusted_points[0] else "")
-
+        # Plot points with different colors based on labels
+        for point, label in zip(points, point_labels):
+            color = 'red' if label == 1 else 'blue'  # red for foreground, blue for background
+            plt.scatter(point[0], point[1], c=color, s=100, edgecolor='black',
+                        label=f'{"Foreground" if label == 1 else "Background"}' if point.tolist() == points[
+                            0].tolist() else "")
         plt.axis('off')
 
         # Overlay Mask and Points on Image
@@ -212,15 +309,16 @@ class SAMDataset(Dataset):
         plt.title('Overlay with Points')
         plt.imshow(image)
         plt.imshow(normalized_mask, cmap='jet', alpha=0.5)  # Use alpha to overlay
-        # Plot points on the overlay
-        for point in adjusted_points:
-            plt.scatter(point[1], point[0], c='red', s=100, edgecolor='black',
-                        label='Point' if point == adjusted_points[0] else "")
-
+        # Plot points with different colors based on labels
+        for point, label in zip(points, point_labels):
+            color = 'red' if label == 1 else 'blue'  # red for foreground, blue for background
+            plt.scatter(point[0], point[1], c=color, s=100, edgecolor='black',
+                        label=f'{"Foreground" if label == 1 else "Background"}' if point.tolist() == points[
+                            0].tolist() else "")
         plt.axis('off')
 
         plt.tight_layout()
-        plt.legend(loc='lower left', bbox_to_anchor=(1, 0), frameon=False)
+        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False)
         plt.show()
 
 
@@ -270,9 +368,13 @@ class ModelAdapter(dl.BaseModelAdapter):
                 image_width = item.width
                 image_height = item.height
                 input_box = np.array([0, 0, image_width, image_height])
-                masks, _, _ = self.predictor.predict(image_properties=image_properties,
-                                                     box=input_box,
-                                                     multimask_output=False)
+                masks, scores, _ = self.predictor.predict(image_properties=image_properties,
+                                                          box=input_box,
+                                                          multimask_output=True)
+
+                sorted_ind = np.argsort(scores)[::-1]
+                masks = masks[sorted_ind]
+                scores = scores[sorted_ind]
 
                 mask = masks[0]
                 mask = 1 - mask
@@ -281,28 +383,34 @@ class ModelAdapter(dl.BaseModelAdapter):
                 image_annotations.add(annotation_definition=annotation_definition,
                                       model_info={'name': self.model_entity.name,
                                                   'model_id': self.model_entity.id,
-                                                  'confidence': 1})
+                                                  'confidence': scores[0]})
             else:
                 for annotation in item_annotations:
-                    if annotation.type != "box":
-                        continue
                     coordinates = annotation.coordinates
-                    left = int(coordinates[0]['x'])
-                    top = int(coordinates[0]['y'])
-                    right = int(coordinates[1]['x'])
-                    bottom = int(coordinates[1]['y'])
-                    input_box = np.array([left, top, right, bottom])
-                    masks, _, _ = self.predictor.predict(image_properties=image_properties,
-                                                         box=input_box,
-                                                         multimask_output=False)
+                    if annotation.type == "box":
+                        left = int(coordinates[0]['x'])
+                        top = int(coordinates[0]['y'])
+                        right = int(coordinates[1]['x'])
+                        bottom = int(coordinates[1]['y'])
+                        input_box = np.array([left, top, right, bottom])
+                        masks, scores, _ = self.predictor.predict(image_properties=image_properties,
+                                                                  box=input_box,
+                                                                  multimask_output=False)
 
-                    mask = masks[0]
+                        mask = masks[0]
+                    elif annotation.type == "point":
+                        input_point = np.array([coordinates['x'], coordinates['y']])
+                        input_label = np.array([1])
+                        masks, scores, _ = self.predictor.predict(image_properties=image_properties,
+                                                                  point=input_point,
+                                                                  point_label=input_label,
+                                                                  multimask_output=False)
+
                     annotation_definition = dl.Segmentation(geo=mask, label=annotation.label)
-
                     image_annotations.add(annotation_definition=annotation_definition,
                                           model_info={'name': self.model_entity.name,
                                                       'model_id': self.model_entity.id,
-                                                      'confidence': 1})
+                                                      'confidence': scores[0]})
             batch_annotations.append(image_annotations)
         logger.info("Finished running SAM2 predictions")
         return batch_annotations
@@ -353,12 +461,14 @@ class ModelAdapter(dl.BaseModelAdapter):
         :param dense_embeddings: Dense embeddings from the prompt encoder.
         :return: Low-resolution masks and predicted scores.
         """
-        high_res_features = [
-            feat_level[-1].unsqueeze(0) for feat_level in self.predictor._features["high_res_feats"]
-        ]
+        # Get high resolution features - they're already in the correct format
+        high_res_features = self.predictor._features["high_res_feats"]
+
+        # Get image embeddings
+        image_embeddings = self.predictor._features["image_embed"][-1].unsqueeze(0)
 
         low_res_masks, prd_scores, _, _ = self.predictor.model.sam_mask_decoder(
-            image_embeddings=self.predictor._features["image_embed"][-1].unsqueeze(0),
+            image_embeddings=image_embeddings,
             image_pe=self.predictor.model.sam_prompt_encoder.get_dense_pe(),
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
@@ -377,11 +487,12 @@ class ModelAdapter(dl.BaseModelAdapter):
         self.set_train_mode() if mode == "train" else self.set_eval_mode()
 
         for batch in dataloader:
-            images, masks, points, boxes_strs, num_masks, item_ids = batch
+            images, masks, points, point_labels, item_ids = batch
 
             images = images.to(self.device)
             masks = masks.to(self.device)
             points = points.to(self.device)
+            point_labels = point_labels.to(self.device)
 
             # Use no_grad for validation
             context = torch.no_grad() if mode == "validate" else torch.enable_grad()
@@ -393,18 +504,15 @@ class ModelAdapter(dl.BaseModelAdapter):
 
                     for i, image in enumerate(images):
                         mask = masks[i]
-                        input_point = points[i]
-                        num_mask = num_masks[i]
+                        input_points = points[i].squeeze(1)
+                        input_labels = point_labels[i].squeeze(1)
                         item_id = item_ids[i]
-                        input_box = eval(boxes_strs[i])
 
                         # Skip invalid samples
-                        if image is None or mask is None or num_mask == 0:
+                        if image is None or mask is None:
                             logger.warning(
                                 f"[Item ID: {item_id}] No valid image or mask found. Skipping this image.")
                             continue
-
-                        input_label = torch.ones((num_mask, 1), device=self.device)
 
                         # Prepare the image for the predictor
                         image_np = (image.cpu().permute(1, 2, 0).numpy() * 255).astype(np.uint8)
@@ -413,8 +521,8 @@ class ModelAdapter(dl.BaseModelAdapter):
                         # Prepare prompts
                         mask_input, unnorm_coords, labels, unnorm_box = self.predictor._prep_prompts(
                             image_properties=image_properties,
-                            point_coords=input_point,
-                            point_labels=input_label,
+                            point_coords=input_points,
+                            point_labels=input_labels,
                             box=None,
                             mask_logits=None,
                             normalize_coords=True,
@@ -469,8 +577,9 @@ class ModelAdapter(dl.BaseModelAdapter):
         learning_rate = self.configuration.get('learning_rate', 1e-5)
         weight_decay = self.configuration.get('weight_decay', 4e-5)
         batch_size = self.configuration.get('batch_size', 4)
-        save_interval = 10
-        patience = 10
+        save_interval = self.configuration.get('save_interval', 10)
+        patience = self.configuration.get('patience', 10)
+        
         no_improvement_epochs = 0
 
         train_path = os.path.join(data_path, 'train')

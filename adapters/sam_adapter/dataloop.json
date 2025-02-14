@@ -173,10 +173,12 @@
           "outputType": "segment",
           "description": "SAM2 Model",
           "configuration": {
-            "num_epochs": 10,
+            "num_epochs": 100,
             "batch_size": 4,
             "learning_rate": 0.00001,
             "weight_decay": 0.00004,
+            "save_interval": 10,
+            "patience": 10,
             "state_dict": "best_sam2_model.torch",
             "was_trained": false
           }
