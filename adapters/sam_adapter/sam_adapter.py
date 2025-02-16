@@ -437,7 +437,6 @@ class ModelAdapter(dl.BaseModelAdapter):
         """
         torch.save(self.predictor.model.state_dict(), os.path.join(local_path, "best_sam2_model.torch"))
         self.configuration['state_dict'] = 'best_sam2_model.torch'
-        self.configuration['was_trained'] = True if self.model_entity.status == "trained" else False
 
     def set_train_mode(self):
         """
