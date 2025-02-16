@@ -350,7 +350,7 @@ class ModelAdapter(dl.BaseModelAdapter):
         if os.path.exists(model_filename):
             logger.info("Loading trained weights.")
             map_location = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            self.model.load_state_dict(torch.load(model_filename, map_location=map_location))
+            self.predictor.model.load_state_dict(torch.load(model_filename, map_location=map_location))
         else:
             logger.info("No trained weights file found. Loading pre-trained weights.")
 
