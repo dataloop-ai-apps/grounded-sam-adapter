@@ -346,12 +346,13 @@ class ModelAdapter(dl.BaseModelAdapter):
         super().__init__(model_entity)
 
     def load(self, local_path, **kwargs):
-        if self.configuration.get('was_trained', 'False') is True:
-            checkpoint_path = os.path.join(local_path, "best_sam2_model.torch")
+        model_filename = os.path.join(local_path, self.configuration.get('state_dict', 'best_sam2_model.torch'))
+        if os.path.exists(model_filename):
+            logger.info("Loading trained weights.")
             map_location = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            self.predictor.model.load_state_dict(torch.load(checkpoint_path, map_location=map_location))
-            logger.info(f"Model loaded from {checkpoint_path}.")
-        return
+            self.model.load_state_dict(torch.load(model_filename, map_location=map_location))
+        else:
+            logger.info("No trained weights file found. Loading pre-trained weights.")
 
     def prepare_item_func(self, item):
         return item
