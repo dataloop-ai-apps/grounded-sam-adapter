@@ -397,15 +397,16 @@ class ModelAdapter(dl.BaseModelAdapter):
                                                                   box=input_box,
                                                                   multimask_output=False)
 
-                        mask = masks[0]
                     elif annotation.type == "point":
-                        input_point = np.array([coordinates['x'], coordinates['y']])
+                        input_point = np.array([[coordinates['x'], coordinates['y']]])
                         input_label = np.array([1])
                         masks, scores, _ = self.predictor.predict(image_properties=image_properties,
-                                                                  point=input_point,
-                                                                  point_label=input_label,
+                                                                  point_coords=input_point,
+                                                                  point_labels=input_label,
                                                                   multimask_output=False)
-
+                    else:
+                        raise ValueError(f"Annotation Type {annotation.type} not supported. Please use points or boxes.")
+                    mask = masks[0]
                     annotation_definition = dl.Segmentation(geo=mask, label=annotation.label)
                     image_annotations.add(annotation_definition=annotation_definition,
                                           model_info={'name': self.model_entity.name,
