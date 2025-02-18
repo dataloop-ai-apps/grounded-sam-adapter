@@ -230,7 +230,6 @@ class SAMDataset(Dataset):
 
 class ModelAdapter(dl.BaseModelAdapter):
     def __init__(self, model_entity: dl.Model):
-        self.save_model_name = self.configuration.get('save_model_name', 'best_sam2_model.torch')
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         logger.info(f'GPU available: {torch.cuda.is_available()}')
         
@@ -250,6 +249,7 @@ class ModelAdapter(dl.BaseModelAdapter):
         super().__init__(model_entity)
 
     def load(self, local_path, **kwargs):
+        self.save_model_name = self.configuration.get('save_model_name', 'best_sam2_model.torch')
         model_filename = os.path.join(local_path, self.configuration.get('save_model_name', self.save_model_name))
         if os.path.exists(model_filename):
             logger.info("Loading trained weights.")
