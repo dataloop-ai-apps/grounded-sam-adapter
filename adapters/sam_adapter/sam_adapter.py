@@ -232,7 +232,10 @@ class ModelAdapter(dl.BaseModelAdapter):
     def __init__(self, model_entity: dl.Model):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         logger.info(f'GPU available: {torch.cuda.is_available()}')
-        
+    
+        super().__init__(model_entity)
+
+    def load(self, local_path, **kwargs):
         # Get model size from config, defaulting to small
         model_cfg = self.configuration.get('model_cfg', 'sam2_hiera_s.yaml')
         model_size = 'small' if 'sam2_hiera_s' in model_cfg else 'large'
@@ -246,9 +249,7 @@ class ModelAdapter(dl.BaseModelAdapter):
 
         sam2_model = build_sam2(model_cfg, weights_filepath, device=self.device)
         self.predictor = DataloopSamPredictor(sam2_model)
-        super().__init__(model_entity)
-
-    def load(self, local_path, **kwargs):
+        
         self.save_model_name = self.configuration.get('save_model_name', 'best_sam2_model.torch')
         model_filename = os.path.join(local_path, self.configuration.get('save_model_name', self.save_model_name))
         if os.path.exists(model_filename):
