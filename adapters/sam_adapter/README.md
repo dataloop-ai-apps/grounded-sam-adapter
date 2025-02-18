@@ -11,8 +11,8 @@ The model supports three prediction modes:
 - Returns a binary mask for the most prominent object
 
 ### 2. Point-based Segmentation
-- Users can input points indicating specific locations inside objects to be segmented
-- Returns precise segmentation masks around the indicated points
+- Users can input points, with each point indicating a specific location inside a different object to be segmented
+- Returns a segmentation mask for each object containing an indicated point
 
 ### 3. Box-guided Segmentation
 - Users can provide bounding boxes around areas of interest
@@ -32,6 +32,8 @@ The adapter supports fine-tuning of the SAM2 model using two types of input anno
    - Enables training with polygon-based datasets
 
 ### Configuration Options
+- `model_cfg`: Model configuration file (choose 'sam2_hiera_s.yaml' for small model or 'sam2_hiera_l.yaml' for large model, default: 'sam2_hiera_s.yaml')
+- `save_model_name`: Name of the model to save (default: 'best_sam2_model.torch')
 - `num_epochs`: Number of training epochs (default: 100)
 - `learning_rate`: Learning rate for optimization (default: 1e-5) 
 - `weight_decay`: Weight decay for regularization (default: 4e-5)

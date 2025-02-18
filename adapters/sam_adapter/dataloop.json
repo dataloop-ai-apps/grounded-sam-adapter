@@ -173,6 +173,8 @@
           "outputType": "segment",
           "description": "SAM2 Model",
           "configuration": {
+            "model_cfg": "sam2_hiera_s.yaml",
+            "save_model_name": "best_sam2_model.torch",
             "num_epochs": 100,
             "batch_size": 4,
             "learning_rate": 0.00001,
