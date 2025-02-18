@@ -180,8 +180,7 @@
             "learning_rate": 0.00001,
             "weight_decay": 0.00004,
             "save_interval": 10,
-            "patience": 10,
-            "state_dict": "best_sam2_model.torch"
+            "patience": 10
           }
         }
       ]

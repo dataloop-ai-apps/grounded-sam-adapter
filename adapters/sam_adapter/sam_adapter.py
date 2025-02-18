@@ -250,7 +250,7 @@ class ModelAdapter(dl.BaseModelAdapter):
         super().__init__(model_entity)
 
     def load(self, local_path, **kwargs):
-        model_filename = os.path.join(local_path, self.configuration.get('state_dict', self.save_model_name))
+        model_filename = os.path.join(local_path, self.configuration.get('save_model_name', self.save_model_name))
         if os.path.exists(model_filename):
             logger.info("Loading trained weights.")
             map_location = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -332,7 +332,6 @@ class ModelAdapter(dl.BaseModelAdapter):
                            we already downloaded the data from dataloop platform
         :return:
         """
-        #TODO: check if I can use the BaseModelAdapter method instead of the code below for downloading images and annotations
 
     def save(self, local_path, **kwargs):
         """ saves configuration and weights locally
@@ -341,7 +340,7 @@ class ModelAdapter(dl.BaseModelAdapter):
         :param local_path: `str` directory path in local FileSystem
         """
         torch.save(self.predictor.model.state_dict(), os.path.join(local_path, self.save_model_name))
-        self.configuration['state_dict'] = self.save_model_name
+        self.configuration['save_model_name'] = self.save_model_name
 
     def set_train_mode(self):
         """
