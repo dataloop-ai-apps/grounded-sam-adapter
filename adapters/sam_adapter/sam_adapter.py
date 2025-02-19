@@ -57,7 +57,8 @@ class SAMDataset(Dataset):
                     elif ann['type'] == 'segment':
                         polygon_annotations.append(ann)
             else:
-                logger.warning(f"No annotations found for item {annotation_data.get('id', 'unknown_id')}. Skipping item.")
+                logger.warning(
+                    f"No annotations found for item {annotation_data.get('id', 'unknown_id')}. Skipping item.")
                 continue
 
             # If we have binary annotations, create one entry with the mask
@@ -96,7 +97,7 @@ class SAMDataset(Dataset):
         if mask is None:
             logger.warning(f"No mask found for item {item_id}. Skipping item.")
             return None, None, None, None, item_id
-        
+
         # Generate points from the mask
         points, point_labels = self._extract_points_from_mask(mask)
 
@@ -232,14 +233,14 @@ class ModelAdapter(dl.BaseModelAdapter):
     def __init__(self, model_entity: dl.Model):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         logger.info(f'GPU available: {torch.cuda.is_available()}')
-    
+
         super().__init__(model_entity)
 
     def load(self, local_path, **kwargs):
         # Get model size from config, defaulting to small
         model_cfg = self.configuration.get('model_cfg', 'sam2_hiera_s.yaml')
         model_size = 'small' if 'sam2_hiera_s' in model_cfg else 'large'
-        
+
         # Construct URLs and filenames based on model size
         weights_url = f'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_{model_size}.pt'
         weights_filepath = os.path.join('artifacts', f'sam2_hiera_{model_size}.pt')
@@ -249,7 +250,7 @@ class ModelAdapter(dl.BaseModelAdapter):
 
         sam2_model = build_sam2(model_cfg, weights_filepath, device=self.device)
         self.predictor = DataloopSamPredictor(sam2_model)
-        
+
         self.save_model_name = self.configuration.get('save_model_name', 'best_sam2_model.torch')
         model_filename = os.path.join(local_path, self.configuration.get('save_model_name', self.save_model_name))
         if os.path.exists(model_filename):
@@ -258,6 +259,8 @@ class ModelAdapter(dl.BaseModelAdapter):
             self.predictor.model.load_state_dict(torch.load(model_filename, map_location=map_location))
         else:
             logger.info("No trained weights file found. Loading pre-trained weights.")
+
+        self.multi_points_prediction = self.configuration.get('multi_points_prediction', False)
 
     def prepare_item_func(self, item):
         return item
@@ -290,6 +293,34 @@ class ModelAdapter(dl.BaseModelAdapter):
                                       model_info={'name': self.model_entity.name,
                                                   'model_id': self.model_entity.id,
                                                   'confidence': scores[0]})
+            elif self.multi_points_prediction:
+                input_points = []
+                input_labels = []
+                for annotation in item_annotations:
+                    coordinates = annotation.coordinates
+                    if annotation.type == "point" and annotation.label == "inside":
+                        input_points.append([coordinates['x'], coordinates['y']])
+                        input_labels.append(1)
+                    elif annotation.type == "point" and annotation.label == "outside":
+                        input_points.append([coordinates['x'], coordinates['y']])
+                        input_labels.append(0)
+                    else:
+                        raise ValueError(
+                            f"Annotation Type {annotation.type} not supported for multi-points prediction. Use points with labels 'inside' or 'outside'.")
+
+                input_points = np.array(input_points)
+                input_labels = np.array(input_labels)
+                
+                masks, scores, _ = self.predictor.predict(image_properties=image_properties,
+                                                          point_coords=input_points,
+                                                          point_labels=input_labels,
+                                                          multimask_output=False)
+                mask = masks[0]
+                annotation_definition = dl.Segmentation(geo=mask, label='mask')
+                image_annotations.add(annotation_definition=annotation_definition,
+                                      model_info={'name': self.model_entity.name,
+                                                  'model_id': self.model_entity.id,
+                                                  'confidence': scores[0]})
             else:
                 for annotation in item_annotations:
                     coordinates = annotation.coordinates
@@ -311,7 +342,8 @@ class ModelAdapter(dl.BaseModelAdapter):
                                                                   point_labels=input_label,
                                                                   multimask_output=False)
                     else:
-                        raise ValueError(f"Annotation Type {annotation.type} not supported. Please use points or boxes.")
+                        raise ValueError(
+                            f"Annotation Type {annotation.type} not supported. Please use points or boxes.")
                     mask = masks[0]
                     annotation_definition = dl.Segmentation(geo=mask, label=annotation.label)
                     image_annotations.add(annotation_definition=annotation_definition,
@@ -485,7 +517,7 @@ class ModelAdapter(dl.BaseModelAdapter):
         batch_size = self.configuration.get('batch_size', 4)
         save_interval = self.configuration.get('save_interval', 10)
         patience = self.configuration.get('patience', 10)
-        
+
         no_improvement_epochs = 0
 
         train_path = os.path.join(data_path, 'train')

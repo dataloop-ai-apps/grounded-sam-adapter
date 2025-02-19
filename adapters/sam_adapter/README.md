@@ -10,13 +10,19 @@ The model supports three prediction modes:
 - When no annotations are provided, a bounding box of the entire image is passed to the model
 - Returns a binary mask for the most prominent object
 
-### 2. Point-based Segmentation
+### 2. Box-guided Segmentation
+- Users can provide bounding boxes around areas of interest
+- The model generates segmentation masks within the specified boxes
+
+### 3. Point-based Segmentation
 - Users can input points, with each point indicating a specific location inside a different object to be segmented
 - Returns a segmentation mask for each object containing an indicated point
 
-### 3. Box-guided Segmentation
-- Users can provide bounding boxes around areas of interest
-- The model generates segmentation masks within the specified boxes
+### 4. Multi-points Segmentation
+- Users can input multiple points, each labeled as "inside" or "outside" to indicate their position relative to objects.
+- The model uses these labeled points to generate segmentation masks, refining the segmentation based on the provided labels.
+- **Configuration Requirement**: Ensure that the `multi_points_prediction` setting is set to `true` in the model configuration to use this mode.
+
 
 ## Training
 
