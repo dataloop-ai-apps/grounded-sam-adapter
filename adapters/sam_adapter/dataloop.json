@@ -1,8 +1,8 @@
 {
     "name": "sam2",
     "displayName": "SAM2",
-    "version": "0.1.49",
-    "scope": "public",
+    "version": "0.1.50",
+    "scope": "project",
     "description": "",
     "attributes": {
       "Provider": "Meta",
