@@ -1,0 +1,189 @@
+{
+    "name": "sam2",
+    "displayName": "SAM2",
+    "version": "0.1.49",
+    "scope": "project",
+    "description": "",
+    "attributes": {
+      "Provider": "Meta",
+      "License": "Apache 2.0",
+      "Category": "Model",
+      "Computer Vision": "Object Detection",
+      "Media Type": ["Image"],
+      "Deployed By": "Dataloop"
+    },
+    "components": {
+      "computeConfigs": [
+        {
+          "name": "sam2-deploy",
+          "runtime": {
+            "podType": "regular-s",
+            "concurrency": 1,
+            "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6",
+            "autoscaler": {
+              "type": "rabbitmq",
+              "minReplicas": 0,
+              "maxReplicas": 2,
+              "queueLength": 100
+            }
+          }
+        },
+        {
+        "name": "sam2-train-evaluate",
+        "runtime": {
+          "podType": "gpu-t4",
+          "concurrency": 1,
+          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6",
+          "autoscaler": {
+            "type": "rabbitmq",
+            "minReplicas": 0,
+            "maxReplicas": 2,
+            "queueLength": 100
+          }
+        }
+      }
+
+      ],
+      "modules": [
+        {
+          "name": "sam2-module",
+          "entryPoint": "adapters/sam_adapter/sam_adapter.py",
+          "className": "ModelAdapter",
+          "computeConfig": "sam2-deploy",
+          "description": "SAM2 Module",
+          "initInputs": [
+            {
+              "type": "Model",
+              "name": "model_entity"
+            }
+          ],
+          "functions": [
+          {
+            "name": "evaluate_model",
+            "computeConfig": "sam2-train-evaluate",
+            "input": [
+              {
+                "type": "Model",
+                "name": "model",
+                "description": "Dataloop Model Entity"
+              },
+              {
+                "type": "Dataset",
+                "name": "dataset",
+                "description": "Dataloop Dataset Entity"
+              },
+              {
+                "type": "Json",
+                "name": "filters",
+                "description": "Dataloop Filter DQL"
+              }
+            ],
+            "output": [
+              {
+                "type": "Model",
+                "name": "model",
+                "description": "Dataloop Model Entity"
+              },
+              {
+                "type": "Dataset",
+                "name": "dataset",
+                "description": "Dataloop Dataset Entity"
+              }
+            ],
+            "displayName": "Evaluate a Model",
+            "displayIcon": "",
+            "description": "Function to evaluate SAM2 model performance"
+          },
+          {
+            "name": "predict_items",
+            "input": [
+              {
+                "type": "Item[]",
+                "name": "items",
+                "description": "List of items to run inference on"
+              }
+            ],
+            "output": [
+              {
+                "type": "Item[]",
+                "name": "items",
+                "description": "The same input images for prediction."
+              },
+              {
+                "type": "Annotation[]",
+                "name": "annotations",
+                "description": "The predicted annotations."
+              }
+            ],
+            "displayName": "Predict Items",
+            "displayIcon": "",
+            "description": "Function to run SAM2 inference on items"
+          },
+          {
+            "name": "train_model",
+            "computeConfig": "sam2-train-evaluate",
+            "input": [
+              {
+                "type": "Model",
+                "name": "model",
+                "description": "Dataloop Model Entity"
+              }
+            ],
+            "output": [
+              {
+                "type": "Model",
+                "name": "model",
+                "description": "Dataloop Model Entity"
+              }
+            ],
+            "displayName": "Train a Model",
+            "displayIcon": "",
+            "description": "Function to train SAM2 model"
+          },
+          {
+            "name": "predict_dataset",
+            "input": [
+              {
+                "type": "Dataset",
+                "name": "dataset",
+                "description": ""
+              },
+              {
+                "type": "Json",
+                "name": "filters",
+                "description": "Dataloop Filter DQL"
+              }
+            ],
+            "output": [
+            ],
+            "displayName": "Predict Dataset",
+            "displayIcon": "",
+            "description": "Function to run SAM2 inference on a dataset"
+          }
+        ]
+      }
+    ],
+      "models": [
+        {
+          "name": "sam2",
+          "moduleName": "sam2-module",
+          "scope": "project",
+          "status": "pre-trained",
+          "inputType": "image",
+          "outputType": "segment",
+          "description": "SAM2 Model",
+          "configuration": {
+            "model_cfg": "sam2_hiera_s.yaml",
+            "save_model_name": "best_sam2_model.torch",
+            "num_epochs": 100,
+            "batch_size": 4,
+            "learning_rate": 0.00001,
+            "weight_decay": 0.00004,
+            "save_interval": 10,
+            "patience": 10,
+            "multi_points_prediction": false
+          }
+        }
+      ]
+    }
+  }
