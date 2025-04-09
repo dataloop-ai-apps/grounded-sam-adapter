@@ -15,6 +15,7 @@
   "components": {
     "toolbars": [
       {
+        "name": "ai-tracker",
         "displayName": "AI Tracker",
         "invoke": {
           "type": "function",
@@ -24,6 +25,7 @@
         "icon": "icon-dl-video-filled"
       },
       {
+        "name": "box-to-segmentation",
         "displayName": "Box to Segmentation",
         "invoke": {
           "type": "function",
@@ -62,7 +64,8 @@
           ]
         }
       },
-      {
+      { 
+        "name": "box-to-polygon",
         "displayName": "Box to Polygon",
         "invoke": {
           "type": "function",
