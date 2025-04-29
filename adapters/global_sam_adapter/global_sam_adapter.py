@@ -13,7 +13,7 @@ import time
 import tqdm
 import os
 import cv2
-import dtlpy as dl
+import dtlpy as su_dl
 import numpy as np
 
 from sam2.build_sam import build_sam2, build_sam2_video_predictor
@@ -118,7 +118,7 @@ class CachedItem(pydantic.BaseModel):
         arbitrary_types_allowed = True
 
 
-class Runner(dl.BaseServiceRunner):
+class Runner(su_dl.BaseServiceRunner):
     def __init__(self, dl):
         """
         Init package attributes here
@@ -170,15 +170,17 @@ class Runner(dl.BaseServiceRunner):
         if progress is not None:
             progress.update(message=message)
 
-    def cache_item(self, item: dl.Item):
+    def cache_item(self, item: su_dl.Item):
         if item.id not in self.cache_items_dict:
             logger.info(f'item: {item.id} isnt cached, preparing...')
             image = item.download(save_locally=False, to_array=True, overwrite=True)
             setting_image_params = self.predictor.set_image(image=image)
-            self.cache_items_dict[item.id] = CachedItem(image_embed=setting_image_params['image_embed'],
-                                                        orig_hw=setting_image_params['orig_hw'],
-                                                        high_res_feats=setting_image_params['high_res_feats'],
-                                                        timestamp=datetime.datetime.now())
+            self.cache_items_dict[item.id] = CachedItem(
+                image_embed=setting_image_params['image_embed'],
+                orig_hw=setting_image_params['orig_hw'],
+                high_res_feats=setting_image_params['high_res_feats'],
+                timestamp=datetime.datetime.now(),
+            )
 
     @staticmethod
     def _track_get_modality(mod: dict):
@@ -197,7 +199,7 @@ class Runner(dl.BaseServiceRunner):
         # replace to webm stream
         if dl.environment() in item_stream_url:
             # is dataloop stream - take webm
-            item_id = item_stream_url[item_stream_url.find('items/') + len('items/'): -7]
+            item_id = item_stream_url[item_stream_url.find('items/') + len('items/'):-7]
             orig_item = dl.items.get(item_id=item_id)
             webm_id = None
             for mod in orig_item.metadata['system'].get('modalities', list()):
@@ -235,31 +237,30 @@ class Runner(dl.BaseServiceRunner):
         base64_bytearray_high_res_feats_0 = base64.b64encode(high_res_feats_0).decode('utf-8')
         high_res_feats_1 = self.cache_items_dict[item.id].high_res_feats[1].cpu().numpy().tobytes()
         base64_bytearray_high_res_feats_1 = base64.b64encode(high_res_feats_1).decode('utf-8')
-        feeds = {'image_embed': base64_bytearray_data,
-                 'high_res_feats_0': base64_bytearray_high_res_feats_0,
-                 'high_res_feats_1': base64_bytearray_high_res_feats_1}
+        feeds = {
+            'image_embed': base64_bytearray_data,
+            'high_res_feats_0': base64_bytearray_high_res_feats_0,
+            'high_res_feats_1': base64_bytearray_high_res_feats_1,
+        }
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
         with open(f'tmp/{item.id}.json', 'w') as f:
             json.dump(feeds, f)
-        features_item = item.dataset.items.upload(local_path=f'tmp/{item.id}.json',
-                                                  remote_path='/.dataloop/sam_features',
-                                                  overwrite=True,
-                                                  remote_name=f'{item.id}.json')
+
+        su_ds = su_dl.datasets.get(dataset_id=item.dataset_id, fetch=False)
+        features_item = su_ds.items.upload(
+            local_path=f'tmp/{item.id}.json',
+            remote_path='/.dataloop/sam_features',
+            overwrite=True,
+            remote_name=f'{item.id}.json',
+        )
         return features_item.id
 
     # default studio
 
     @staticmethod
     @torch.inference_mode()
-    def init_state(
-            self,
-            cap,
-            image_size,
-            num_frames,
-            offload_video_to_cpu=False,
-            offload_state_to_cpu=False,
-    ):
+    def init_state(self, cap, image_size, num_frames, offload_video_to_cpu=False, offload_state_to_cpu=False):
         """Initialize an inference state."""
         compute_device = self.device  # device of the model
         img_mean = torch.tensor((0.485, 0.456, 0.406), dtype=torch.float32)[:, None, None]
@@ -363,12 +364,14 @@ class Runner(dl.BaseServiceRunner):
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
         image_size = 1024  # must be same height and width
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-            inference_state = self.init_state(self=self.video_predictor,
-                                              cap=cap,
-                                              image_size=image_size,
-                                              num_frames=frame_duration,
-                                              offload_state_to_cpu=False,
-                                              offload_video_to_cpu=False)
+            inference_state = self.init_state(
+                self=self.video_predictor,
+                cap=cap,
+                image_size=image_size,
+                num_frames=frame_duration,
+                offload_state_to_cpu=False,
+                offload_video_to_cpu=False,
+            )
 
             for bbox_id, bb in bbs.items():
                 left = int(bb[0]['x'])
@@ -377,15 +380,13 @@ class Runner(dl.BaseServiceRunner):
                 bottom = int(bb[1]['y'])
                 input_box = np.array([left, top, right, bottom])
                 frame_idx, object_ids, masks = self.video_predictor.add_new_points_or_box(
-                    inference_state=inference_state,
-                    frame_idx=0,
-                    obj_id=bbox_id,
-                    box=input_box)
+                    inference_state=inference_state, frame_idx=0, obj_id=bbox_id, box=input_box
+                )
             # propagate the prompts to get masklets throughout the video
             for out_frame_idx, out_obj_ids, out_mask_logits in self.video_predictor.propagate_in_video(
-                    inference_state=inference_state,
-                    # start_frame_idx=start_frame,
-                    # max_frame_num_to_track=frame_duration
+                inference_state=inference_state,
+                # start_frame_idx=start_frame,
+                # max_frame_num_to_track=frame_duration
             ):
                 for i, bbox_id in enumerate(out_obj_ids):
                     mask = (out_mask_logits[i] > 0.0).cpu().numpy()[0]
@@ -395,42 +396,34 @@ class Runner(dl.BaseServiceRunner):
                         cols = np.any(mask, axis=0)
                         ymin, ymax = np.where(rows)[0][[0, -1]]
                         xmin, xmax = np.where(cols)[0][[0, -1]]
-                        video_segments[bbox_id][start_frame + out_frame_idx] = dl.Box(top=int(np.round(ymin)),
-                                                                                      left=int(np.round(xmin)),
-                                                                                      bottom=int(np.round(ymax)),
-                                                                                      right=int(np.round(xmax)),
-                                                                                      label='dummy').to_coordinates(
-                            color=None)
+                        video_segments[bbox_id][start_frame + out_frame_idx] = dl.Box(
+                            top=int(np.round(ymin)),
+                            left=int(np.round(xmin)),
+                            bottom=int(np.round(ymax)),
+                            right=int(np.round(xmax)),
+                            label='dummy',
+                        ).to_coordinates(color=None)
                     else:
                         logger.info('NOT Found tracking BB')
                         # Don't remove
                         # Taking annotation from last frame if not found
                         video_segments[bbox_id][start_frame + out_frame_idx] = video_segments[bbox_id][
-                            start_frame + out_frame_idx - 1]
+                            start_frame + out_frame_idx - 1
+                        ]
 
         return video_segments
 
-    def box_to_segmentation(self,
-                            dl,
-                            item: dl.Item,
-                            annotations,
-                            progress: dl.Progress = None) -> list:
-        return self.sam_predict_box(dl=dl, item=item, annotations=annotations, return_type='Semantic',
-                                    progress=progress)
+    def box_to_segmentation(self, dl, item: su_dl.Item, annotations, progress: su_dl.Progress = None) -> list:
+        return self.sam_predict_box(
+            dl=dl, item=item, annotations=annotations, return_type='Semantic', progress=progress
+        )
 
-    def box_to_polygon(self,
-                       dl,
-                       item: dl.Item,
-                       annotations,
-                       progress: dl.Progress = None) -> list:
+    def box_to_polygon(self, dl, item: su_dl.Item, annotations, progress: su_dl.Progress = None) -> list:
         return self.sam_predict_box(dl=dl, item=item, annotations=annotations, return_type='Polygon', progress=progress)
 
-    def sam_predict_box(self,
-                        dl,
-                        item: dl.Item,
-                        annotations,
-                        return_type: str = 'segment',
-                        progress: dl.Progress = None) -> list:
+    def sam_predict_box(
+        self, dl, item: su_dl.Item, annotations, return_type: str = 'segment', progress: su_dl.Progress = None
+    ) -> list:
         """
 
         :param dl: DTLPY sdk instance
@@ -471,9 +464,9 @@ class Runner(dl.BaseServiceRunner):
             input_box = np.array([left, top, right, bottom])
             # Call SAM
             tic_model = time.time()
-            masks, _, _ = self.predictor.predict(image_properties=image_params.dict(),
-                                                 box=input_box,
-                                                 multimask_output=False)
+            masks, _, _ = self.predictor.predict(
+                image_properties=image_params.dict(), box=input_box, multimask_output=False
+            )
             toc_model = time.time()
             logger.info(f'time to get predicted mask: {round(toc_model - tic_model, 2)} seconds')
 
@@ -503,10 +496,12 @@ class Runner(dl.BaseServiceRunner):
             else:
                 raise ValueError('Unknown return type: {}'.format(return_type))
             builder = item.annotations.builder()
-            builder.add(annotation_definition=annotation_definition,
-                        automated=True,
-                        model_info=model_info,
-                        metadata=annotation.metadata)
+            builder.add(
+                annotation_definition=annotation_definition,
+                automated=True,
+                model_info=model_info,
+                metadata=annotation.metadata,
+            )
             new_annotation = builder.annotations[0].to_json()
             new_annotation['id'] = annotation.id
             annotation_response.append(new_annotation)
@@ -568,12 +563,13 @@ class Runner(dl.BaseServiceRunner):
             point_labels = None
             point_coords = None
 
-        masks, _, _ = self.predictor.predict(image_properties=image_params.dict(),
-                                             point_coords=point_coords,
-                                             point_labels=point_labels,
-                                             box=input_box,
-                                             multimask_output=False,
-                                             )
+        masks, _, _ = self.predictor.predict(
+            image_properties=image_params.dict(),
+            point_coords=point_coords,
+            point_labels=point_labels,
+            box=input_box,
+            multimask_output=False,
+        )
         toc_2 = time.time()
         logger.info(f'time to get predicted mask: {round(toc_2 - tic_2, 2)} seconds')
 
@@ -582,7 +578,7 @@ class Runner(dl.BaseServiceRunner):
         tic_3 = time.time()
         builder: dl.AnnotationCollection = item.annotations.builder()
         # boxed_mask = masks[0][bb[0]['y']:bb[1]['y'], bb[0]['x']:bb[1]['x']]
-        boxed_mask = masks[0][input_box[1]:input_box[3], input_box[0]:input_box[2]]
+        boxed_mask = masks[0][input_box[1] : input_box[3], input_box[0] : input_box[2]]
         builder.add(annotation_definition=dl.Segmentation(geo=boxed_mask > 0, label='dummy'))
         toc_final = time.time()
         logger.info(f'time to create annotations: {round(toc_final - tic_3, 2)} seconds')

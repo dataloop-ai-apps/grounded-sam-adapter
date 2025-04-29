@@ -242,6 +242,7 @@
         "name": "global-sam",
         "moduleName": "global-sam",
         "useUserJwt": true,
+        "botUserName": "tab-apps@dataloop.ai",
         "runtime": {
           "podType": "gpu-t4-m",
           "concurrency": 10,

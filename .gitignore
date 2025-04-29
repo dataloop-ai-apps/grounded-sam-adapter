@@ -401,3 +401,5 @@ customer_*.*
 *.onnx
 *dataloop_scripts.py
 *venv*
+
+deploy.py
