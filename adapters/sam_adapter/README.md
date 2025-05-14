@@ -22,7 +22,7 @@ The model supports three prediction modes:
 - Users can input multiple points, each labeled as "inside" or "outside" to indicate their position relative to objects.
 - The model uses these labeled points to generate segmentation masks, refining the segmentation based on the provided labels.
 - **Configuration Requirement**: Ensure that the `multi_points_prediction` setting is set to `true` in the model configuration to use this mode.
-
+- **Output Type**: The `output_type` setting can be set to either `segment` or `polygon` in the model configuration, depending on whether you want segmentation masks or polygon annotations as output.
 
 ## Training
 
@@ -46,6 +46,8 @@ The adapter supports fine-tuning of the SAM2 model using two types of input anno
 - `batch_size`: Batch size for training (default: 4)
 - `save_interval`: Number of epochs between model checkpoints (default: 10)
 - `patience`: Number of epochs to wait for improvement before early stopping (default: 10)
+- `multi_points_prediction`: Whether to use multi-points prediction (default: false)
+- `output_type`: Whether to use segmentation masks or polygon annotations as output (default: 'segment')
 
 ### Training Features
 - Mixed precision training for improved performance
