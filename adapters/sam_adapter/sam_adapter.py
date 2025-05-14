@@ -288,9 +288,9 @@ class ModelAdapter(dl.BaseModelAdapter):
 
                 for i, mask in enumerate(masks):
                     if self.output_type == "segment":
-                        annotation_definition = dl.Segmentation(geo=mask, label=f"mask_{i}")
+                        annotation_definition = dl.Segmentation(geo=mask, label=f"mask_{i+1}")
                     elif self.output_type == "polygon":
-                        annotation_definition = dl.Polygon.from_segmentation(mask=mask, label=f"mask_{i}")
+                        annotation_definition = dl.Polygon.from_segmentation(mask=mask, label=f"mask_{i+1}")
                     image_annotations.add(
                         annotation_definition=annotation_definition,
                         model_info={
