@@ -261,6 +261,7 @@ class ModelAdapter(dl.BaseModelAdapter):
             logger.info("No trained weights file found. Loading pre-trained weights.")
 
         self.multi_points_prediction = self.configuration.get('multi_points_prediction', False)
+        self.output_type = self.configuration.get('output_type', 'segment')
 
     def prepare_item_func(self, item):
         return item
@@ -287,7 +288,10 @@ class ModelAdapter(dl.BaseModelAdapter):
 
                 mask = masks[0]
                 mask = 1 - mask
-                annotation_definition = dl.Segmentation(geo=mask, label="NA")
+                if self.output_type == "segment":
+                    annotation_definition = dl.Segmentation(geo=mask, label="NA")
+                elif self.output_type == "polygon":
+                    annotation_definition = dl.Polygon.from_segmentation(mask=mask, label="NA")
 
                 image_annotations.add(annotation_definition=annotation_definition,
                                       model_info={'name': self.model_entity.name,
@@ -305,8 +309,8 @@ class ModelAdapter(dl.BaseModelAdapter):
                         input_points.append([coordinates['x'], coordinates['y']])
                         input_labels.append(0)
                     else:
-                        raise ValueError(
-                            f"Annotation Type {annotation.type} not supported for multi-points prediction. Use points with labels 'inside' or 'outside'.")
+                        logger.info(f"Annotation Type {annotation.type} not supported for multi-points prediction. Use points with labels 'inside' or 'outside'.")
+                        continue
 
                 input_points = np.array(input_points)
                 input_labels = np.array(input_labels)
@@ -316,7 +320,10 @@ class ModelAdapter(dl.BaseModelAdapter):
                                                           point_labels=input_labels,
                                                           multimask_output=False)
                 mask = masks[0]
-                annotation_definition = dl.Segmentation(geo=mask, label='mask')
+                if self.output_type == "segment":
+                    annotation_definition = dl.Segmentation(geo=mask, label='mask')
+                elif self.output_type == "polygon":
+                    annotation_definition = dl.Polygon.from_segmentation(mask=mask, label='mask')
                 image_annotations.add(annotation_definition=annotation_definition,
                                       model_info={'name': self.model_entity.name,
                                                   'model_id': self.model_entity.id,
@@ -342,10 +349,13 @@ class ModelAdapter(dl.BaseModelAdapter):
                                                                   point_labels=input_label,
                                                                   multimask_output=False)
                     else:
-                        raise ValueError(
-                            f"Annotation Type {annotation.type} not supported. Please use points or boxes.")
+                        logger.info(f"Annotation Type {annotation.type} not supported. Please use points or boxes.")
+                        continue
                     mask = masks[0]
-                    annotation_definition = dl.Segmentation(geo=mask, label=annotation.label)
+                    if self.output_type == "segment":
+                        annotation_definition = dl.Segmentation(geo=mask, label=annotation.label)
+                    elif self.output_type == "polygon":
+                        annotation_definition = dl.Polygon.from_segmentation(mask=mask, label=annotation.label)
                     image_annotations.add(annotation_definition=annotation_definition,
                                           model_info={'name': self.model_entity.name,
                                                       'model_id': self.model_entity.id,

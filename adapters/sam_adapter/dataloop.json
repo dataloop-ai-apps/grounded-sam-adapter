@@ -181,7 +181,8 @@
             "weight_decay": 0.00004,
             "save_interval": 10,
             "patience": 10,
-            "multi_points_prediction": false
+            "multi_points_prediction": false,
+            "output_type": "segment"
           }
         }
       ]
