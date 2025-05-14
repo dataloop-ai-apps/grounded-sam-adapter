@@ -286,17 +286,19 @@ class ModelAdapter(dl.BaseModelAdapter):
                 masks = masks[sorted_ind]
                 scores = scores[sorted_ind]
 
-                mask = masks[0]
-                mask = 1 - mask
-                if self.output_type == "segment":
-                    annotation_definition = dl.Segmentation(geo=mask, label="NA")
-                elif self.output_type == "polygon":
-                    annotation_definition = dl.Polygon.from_segmentation(mask=mask, label="NA")
-
-                image_annotations.add(annotation_definition=annotation_definition,
-                                      model_info={'name': self.model_entity.name,
-                                                  'model_id': self.model_entity.id,
-                                                  'confidence': scores[0]})
+                for i, mask in enumerate(masks):
+                    if self.output_type == "segment":
+                        annotation_definition = dl.Segmentation(geo=mask, label=f"mask_{i}")
+                    elif self.output_type == "polygon":
+                        annotation_definition = dl.Polygon.from_segmentation(mask=mask, label=f"mask_{i}")
+                    image_annotations.add(
+                        annotation_definition=annotation_definition,
+                        model_info={
+                            'name': self.model_entity.name,
+                            'model_id': self.model_entity.id,
+                            'confidence': scores[i]
+                        }
+                    )
             elif self.multi_points_prediction:
                 input_points = []
                 input_labels = []
