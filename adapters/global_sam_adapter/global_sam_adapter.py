@@ -279,7 +279,9 @@ class Runner(su_dl.BaseServiceRunner):
 
     @staticmethod
     @torch.inference_mode()
-    def init_state(video_predictor, cap, image_size, num_frames, offload_video_to_cpu=False, offload_state_to_cpu=False):
+    def init_state(
+        video_predictor, cap, image_size, num_frames, offload_video_to_cpu=False, offload_state_to_cpu=False
+    ):
         """Initialize an inference state."""
         compute_device = video_predictor.device  # device of the model
         img_mean = torch.tensor((0.485, 0.456, 0.406), dtype=torch.float32)[:, None, None]
@@ -350,21 +352,15 @@ class Runner(su_dl.BaseServiceRunner):
         video_predictor._get_image_feature(inference_state, frame_idx=0, batch_size=1)
         return inference_state
 
-    @staticmethod
-    def _get_max_frame_duration(item, frame_duration, start_frame):
-        if start_frame + frame_duration > int(item.metadata['system']['ffmpeg']['nb_read_frames']):
-            frame_duration = int(item.metadata['system']['ffmpeg']['nb_read_frames']) - start_frame
-        return frame_duration
-
     def track(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
 
         start_time_all = time.time()
         free, total, used = self.get_gpu_memory()
         logger.info(f'GPU memory - total: {total}, used: {used}, free: {free}')
-        
+
         start_time = time.time()
         logger.info(f"Setting cap to start frame {start_frame}")
-        
+
         video_loaded = False
         for _ in range(3):
             cap = None
@@ -377,10 +373,14 @@ class Runner(su_dl.BaseServiceRunner):
                     break
         if not video_loaded:
             raise RuntimeError(f'Failed to get video stream {item_stream_url} with start frame {start_frame}')
-                
-        frame_duration = self._get_max_frame_duration(
-            item=orig_item, frame_duration=frame_duration, start_frame=start_frame
-        )
+
+        try:
+            n_frames = int(orig_item.metadata['system']['ffmpeg']['nb_read_frames'])
+        except KeyError:
+            n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if start_frame + frame_duration > n_frames:
+            frame_duration = n_frames - start_frame
+
         logger.info("Setting cap to start frame - Done")
         logger.info(f"RUNTIME: set video cap: {time.time() - start_time:.2f}[s]")
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
@@ -409,7 +409,7 @@ class Runner(su_dl.BaseServiceRunner):
                     bbs[bbox_id] = bb[0]
                     bbs_type_map[bbox_id] = 'polygon'
                 elif isinstance(bb, list) and len(bb) > 2:
-                     bbs_type_map[bbox_id] = 'polygon'
+                    bbs_type_map[bbox_id] = 'polygon'
                 else:
                     bbs_type_map[bbox_id] = 'box'
 
@@ -664,7 +664,9 @@ def test_local():
         if ann.id in results:
             for frame_id, coords in results[ann.id].items():
                 ann.add_frame(
-                    annotation_definition=dl.Polygon(geo=dl.Polygon.from_coordinates(coordinates=coords), label=ann.label),
+                    annotation_definition=dl.Polygon(
+                        geo=dl.Polygon.from_coordinates(coordinates=coords), label=ann.label
+                    ),
                     frame_num=frame_id,
                     fixed=True,
                     object_visible=True,
