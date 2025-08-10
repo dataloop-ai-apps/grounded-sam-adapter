@@ -9,7 +9,7 @@ git+https://github.com/facebookresearch/segment-anything.git
 numpy==1.26.4
 
 # pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117
-aiohttp>=3.12.14 # not directly required, pinned by Snyk to avoid a vulnerability
 urllib3>=2.5.0 # not directly required, pinned by Snyk to avoid a vulnerability
 protobuf>=4.25.8 # not directly required, pinned by Snyk to avoid a vulnerability
 setuptools>=78.1.1 # not directly required, pinned by Snyk to avoid a vulnerability
+
