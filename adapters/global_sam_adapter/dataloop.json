@@ -2,12 +2,12 @@
   "name": "global-sam-adapter",
   "displayName": "Global SAM2 Adapter",
   "description": "SAM2 adapter for global functions",
-  "version": "0.1.54",
+  "version": "0.1.55",
   "scope": "public",
   "codebase": {
     "type": "git",
     "gitUrl": "https://github.com/dataloop-ai-apps/grounded-sam-adapter.git",
-    "gitTag": "0.1.54"
+    "gitTag": "0.1.55"
   },
   "attributes": {
     "License": "Apache 2.0"
