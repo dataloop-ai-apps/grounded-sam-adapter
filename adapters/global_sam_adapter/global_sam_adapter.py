@@ -1,4 +1,3 @@
-from PIL import Image
 import urllib.request
 import collections
 import subprocess
@@ -10,7 +9,6 @@ import base64
 import torch
 import json
 import time
-import tqdm
 import os
 import cv2
 import dtlpy as su_dl
@@ -24,85 +22,103 @@ from adapters.global_sam_adapter.sam2_handler import DataloopSamPredictor
 logger = logging.getLogger('[GLOBAL-SAM]')
 logger.setLevel('INFO')
 
+# Enable cuDNN autotuner for fixed input sizes to improve convolution performance
+try:
+    torch.backends.cudnn.benchmark = True
+except Exception:
+    pass
+
 
 class AsyncVideoFrameLoader:
     """
-    A list of video frames to be load asynchronously without blocking session start.
+    Asynchronously prefetches video frames without blocking session start.
+    Uses a single producer thread to read from the capture in order, while
+    consumers wait on availability via a condition variable.
     """
 
-    def __init__(
-            self,
-            cap,
-            num_frames,
-            image_size,
-            offload_video_to_cpu,
-            img_mean,
-            img_std,
-            compute_device,
-    ):
+    def __init__(self, cap, num_frames, image_size, offload_video_to_cpu, img_mean, img_std, compute_device):
         self.cap = cap
         self.image_size = image_size
         self.offload_video_to_cpu = offload_video_to_cpu
-        self.img_mean = img_mean
-        self.img_std = img_std
+        self.compute_device = compute_device
+        # keep mean/std on the same device as frames to avoid CPU math
+        self.img_mean = img_mean.to(self.compute_device, non_blocking=True)
+        self.img_std = img_std.to(self.compute_device, non_blocking=True)
+
         # items in `self.images` will be loaded asynchronously
         self.images = [None] * num_frames
         # catch and raise any exceptions in the async loading thread
         self.exception = None
-        # video_height and video_width be filled when loading the first image
+        # video_height and video_width filled when loading the first frame
         self.video_height = None
         self.video_width = None
-        self.compute_device = compute_device
 
-        # load the first frame to fill video_height and video_width and also
-        # to cache it (since it's most likely where the user will click)
-        # wait for the video capture to be opened
-        self.__getitem__(0)
+        # condition variable for producer/consumer coordination
+        self._cv = threading.Condition()
+        self._next_to_fill = 0
+        self._stop = False
 
-        # load the rest of frames asynchronously without blocking the session start
-        def _load_frames():
-            try:
-                for n in tqdm.tqdm(range(len(self.images)), desc="frame loading (JPEG)"):
-                    self.__getitem__(n)
-            except Exception as e:
-                self.exception = e
+        # synchronously read and process the first frame to set sizes
+        ret, frame = self.cap.read()
+        if not ret or frame is None:
+            raise RuntimeError("Failed to read first frame from capture")
+        self.video_height, self.video_width = frame.shape[0], frame.shape[1]
+        self.images[0] = self._frame_to_tensor(frame)
+        self._next_to_fill = 1
 
-        self.thread = threading.Thread(target=_load_frames, daemon=True)
+        # start background producer for remaining frames
+        self.thread = threading.Thread(target=self._prefetch, daemon=True)
         self.thread.start()
-        self.thread.join()
 
-    @staticmethod
-    def _load_img_as_tensor(img_pil, image_size):
-        img_np = np.array(img_pil.convert("RGB").resize((image_size, image_size)))
-        if img_np.dtype == np.uint8:  # np.uint8 is expected for JPEG images
-            img_np = img_np / 255.0
-        else:
-            raise RuntimeError(f"Unknown image dtype: {img_np.dtype}")
-        img = torch.from_numpy(img_np).permute(2, 0, 1)
-        video_width, video_height = img_pil.size  # the original video size
-        return img, video_height, video_width
+    def _frame_to_tensor(self, frame_np: np.ndarray) -> torch.Tensor:
+        # OpenCV provides BGR; convert to RGB (use getattr to avoid linter cv2 stub issues)
+        cvtColor = getattr(cv2, 'cvtColor')
+        COLOR_BGR2RGB = getattr(cv2, 'COLOR_BGR2RGB', 4)
+        INTER_LINEAR = getattr(cv2, 'INTER_LINEAR', 1)
+        resize = getattr(cv2, 'resize')
+        rgb = cvtColor(frame_np, COLOR_BGR2RGB)
+        if (rgb.shape[1], rgb.shape[0]) != (self.image_size, self.image_size):
+            rgb = resize(rgb, (self.image_size, self.image_size), interpolation=INTER_LINEAR)
+        # HWC uint8 -> CHW float32 [0,1]
+        img = torch.from_numpy(np.ascontiguousarray(rgb)).to(self.compute_device, non_blocking=True)
+        img = img.permute(2, 0, 1).float().div_(255.0)
+        # normalize on device
+        img.sub_(self.img_mean).div_(self.img_std)
+        # optionally keep frames on CPU to save GPU memory
+        if self.offload_video_to_cpu:
+            img = img.to("cpu", non_blocking=True)
+        return img
+
+    def _prefetch(self):
+        try:
+            while True:
+                with self._cv:
+                    if self._stop or self._next_to_fill >= len(self.images):
+                        self._cv.notify_all()
+                        return
+                    idx = self._next_to_fill
+                    self._next_to_fill += 1
+                ret, frame = self.cap.read()
+                if not ret or frame is None:
+                    raise RuntimeError(f"Failed to read frame {idx}")
+                img = self._frame_to_tensor(frame)
+                with self._cv:
+                    self.images[idx] = img
+                    self._cv.notify_all()
+        except Exception as e:
+            with self._cv:
+                self.exception = e
+                self._cv.notify_all()
 
     def __getitem__(self, index):
-        if self.exception is not None:
-            raise RuntimeError(f"Failure in frame loading thread {self.exception}") from self.exception
-
-        img = self.images[index]
-        if img is not None:
-            return img
-
-        ret, frame = self.cap.read()
-
-        img, video_height, video_width = self._load_img_as_tensor(img_pil=Image.fromarray(frame),
-                                                                  image_size=self.image_size)
-        self.video_height = video_height
-        self.video_width = video_width
-        # normalize by mean and std
-        img -= self.img_mean
-        img /= self.img_std
-        if not self.offload_video_to_cpu:
-            img = img.to(self.compute_device, non_blocking=True)
-        self.images[index] = img
-        return img
+        if index < 0 or index >= len(self.images):
+            raise IndexError(index)
+        with self._cv:
+            while self.images[index] is None and self.exception is None:
+                self._cv.wait(timeout=0.5)
+            if self.exception is not None:
+                raise RuntimeError(f"Failure in frame loading thread {self.exception}") from self.exception
+            return self.images[index]
 
     def __len__(self):
         return len(self.images)
@@ -144,8 +160,9 @@ class Runner(su_dl.BaseServiceRunner):
 
         sam2_model = build_sam2(model_cfg, weights_filepath, device=device)
         self.predictor = DataloopSamPredictor(sam2_model)
-        self.video_predictor: SAM2VideoPredictor = build_sam2_video_predictor(model_cfg, weights_filepath,
-                                                                              device=device)
+        self.video_predictor: SAM2VideoPredictor = build_sam2_video_predictor(
+            model_cfg, weights_filepath, device=device
+        )
         self.cache_items_dict = dict()
         # tracker params
         self.MAX_AGE = 20
@@ -199,7 +216,7 @@ class Runner(su_dl.BaseServiceRunner):
         # replace to webm stream
         if dl.environment() in item_stream_url:
             # is dataloop stream - take webm
-            item_id = item_stream_url[item_stream_url.find('items/') + len('items/'):-7]
+            item_id = item_stream_url[item_stream_url.find('items/') + len('items/') : -7]
             orig_item = dl.items.get(item_id=item_id)
             webm_id = None
             for mod in orig_item.metadata['system'].get('modalities', list()):
@@ -215,7 +232,9 @@ class Runner(su_dl.BaseServiceRunner):
                 # take webm if exists
                 item_stream_url = item_stream_url.replace(item_id, webm_id)
         ############
-        return cv2.VideoCapture('{}?jwt={}'.format(item_stream_url, dl.token())), orig_item
+        # use getattr to avoid static analyzer errors on cv2 stubs
+        VideoCapture = getattr(cv2, "VideoCapture")
+        return VideoCapture('{}?jwt={}'.format(item_stream_url, dl.token())), orig_item
 
     @staticmethod
     def _track_calc_new_size(height, width, max_size):
@@ -260,9 +279,11 @@ class Runner(su_dl.BaseServiceRunner):
 
     @staticmethod
     @torch.inference_mode()
-    def init_state(self, cap, image_size, num_frames, offload_video_to_cpu=False, offload_state_to_cpu=False):
+    def init_state(
+        video_predictor, cap, image_size, num_frames, offload_video_to_cpu=False, offload_state_to_cpu=False
+    ):
         """Initialize an inference state."""
-        compute_device = self.device  # device of the model
+        compute_device = video_predictor.device  # device of the model
         img_mean = torch.tensor((0.485, 0.456, 0.406), dtype=torch.float32)[:, None, None]
         img_std = torch.tensor((0.229, 0.224, 0.225), dtype=torch.float32)[:, None, None]
         images = AsyncVideoFrameLoader(
@@ -328,44 +349,52 @@ class Runner(su_dl.BaseServiceRunner):
         inference_state["frames_already_tracked"] = {}
         # Warm up the visual backbone and cache the image feature on frame 0
 
-        self._get_image_feature(inference_state, frame_idx=0, batch_size=1)
+        video_predictor._get_image_feature(inference_state, frame_idx=0, batch_size=1)
         return inference_state
-
-    @staticmethod
-    def _get_max_frame_duration(item, frame_duration, start_frame):
-        if start_frame + frame_duration > int(item.metadata['system']['ffmpeg']['nb_read_frames']):
-            frame_duration = int(item.metadata['system']['ffmpeg']['nb_read_frames']) - start_frame
-        return frame_duration
 
     def track(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
 
+        start_time_all = time.time()
         free, total, used = self.get_gpu_memory()
         logger.info(f'GPU memory - total: {total}, used: {used}, free: {free}')
 
-        cap, orig_item = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
-        frame_duration = self._get_max_frame_duration(item=orig_item,
-                                                      frame_duration=frame_duration,
-                                                      start_frame=start_frame)
-        logger.info(f"Setting cap to start frame {start_frame}")
         start_time = time.time()
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        end_time = time.time() - start_time
-        max_retries = 3
-        while end_time >= 30 and max_retries > 0:
-            logger.info(f"Retrying to set cap to start frame {start_frame}, retries left: {max_retries}")
-            cap, _ = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
-            start_time = time.time()
-            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-            end_time = time.time() - start_time
-            max_retries -= 1
-        if end_time > 30:
-            raise RuntimeError(f'Failed to get video stream {start_frame}')
+        logger.info(f"Setting cap to start frame {start_frame}")
+
+        video_loaded = False
+        for _ in range(3):
+            cap = None
+            cap, orig_item = self._track_get_item_stream_capture(dl=dl, item_stream_url=item_stream_url)
+            if cap is not None and cap.isOpened():
+                CAP_PROP_POS_FRAMES = getattr(cv2, "CAP_PROP_POS_FRAMES")
+                cap.set(CAP_PROP_POS_FRAMES, start_frame)
+                if int(cap.get(CAP_PROP_POS_FRAMES)) == start_frame:
+                    video_loaded = True
+                    break
+        if not video_loaded:
+            raise RuntimeError(f'Failed to get video stream {item_stream_url} with start frame {start_frame}')
+
+        try:
+            n_frames = int(orig_item.metadata['system']['ffmpeg']['nb_read_frames'])
+        except KeyError:
+            n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if start_frame + frame_duration > n_frames:
+            frame_duration = n_frames - start_frame
+
         logger.info("Setting cap to start frame - Done")
+        logger.info(f"RUNTIME: set video cap: {time.time() - start_time:.2f}[s]")
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
-        image_size = 1024  # must be same height and width
-        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+        # match the model's preferred image size for better throughput/memory balance
+        image_size = getattr(self.video_predictor, 'image_size', 1024)
+        start_time = time.time()
+        logger.info(f"Init start and loading frames...")
+        use_cuda = torch.cuda.is_available()
+        # prefer bf16 when supported, else fp16 on CUDA, else fp32 on CPU
+        bf16_supported = getattr(torch.cuda, 'is_bf16_supported', lambda: False)() if use_cuda else False
+        autocast_dtype = torch.bfloat16 if bf16_supported else (torch.float16 if use_cuda else torch.float32)
+        with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=autocast_dtype, enabled=use_cuda):
             inference_state = self.init_state(
-                self=self.video_predictor,
+                video_predictor=self.video_predictor,
                 cap=cap,
                 image_size=image_size,
                 num_frames=frame_duration,
@@ -373,43 +402,78 @@ class Runner(su_dl.BaseServiceRunner):
                 offload_video_to_cpu=False,
             )
 
+            bbs_type_map = dict()
             for bbox_id, bb in bbs.items():
-                left = int(bb[0]['x'])
-                top = int(bb[0]['y'])
-                right = int(bb[1]['x'])
-                bottom = int(bb[1]['y'])
+                if isinstance(bb, list) and isinstance(bb[0], list):
+                    # flat the list in a list to just one list
+                    bbs[bbox_id] = bb[0]
+                    bbs_type_map[bbox_id] = 'polygon'
+                elif isinstance(bb, list) and len(bb) > 2:
+                    bbs_type_map[bbox_id] = 'polygon'
+                else:
+                    bbs_type_map[bbox_id] = 'box'
+
+            for bbox_id, bb in bbs.items():
+                left = int(np.min([pt['x'] for pt in bb]))
+                top = int(np.min([pt['y'] for pt in bb]))
+                right = int(np.max([pt['x'] for pt in bb]))
+                bottom = int(np.max([pt['y'] for pt in bb]))
                 input_box = np.array([left, top, right, bottom])
                 frame_idx, object_ids, masks = self.video_predictor.add_new_points_or_box(
                     inference_state=inference_state, frame_idx=0, obj_id=bbox_id, box=input_box
                 )
+            logger.info(f"Init start and loading frames - Done")
+            logger.info(f"RUNTIME: init state: {time.time() - start_time:.2f}[s]")
+            start_time = time.time()
+            logger.info(f"Propagate in video...")
             # propagate the prompts to get masklets throughout the video
             for out_frame_idx, out_obj_ids, out_mask_logits in self.video_predictor.propagate_in_video(
                 inference_state=inference_state,
                 # start_frame_idx=start_frame,
                 # max_frame_num_to_track=frame_duration
             ):
+                if out_frame_idx >= frame_duration:
+                    break
                 for i, bbox_id in enumerate(out_obj_ids):
-                    mask = (out_mask_logits[i] > 0.0).cpu().numpy()[0]
-                    if mask.any():
-                        logger.info('Found tracking BB')
-                        rows = np.any(mask, axis=1)
-                        cols = np.any(mask, axis=0)
-                        ymin, ymax = np.where(rows)[0][[0, -1]]
-                        xmin, xmax = np.where(cols)[0][[0, -1]]
-                        video_segments[bbox_id][start_frame + out_frame_idx] = dl.Box(
-                            top=int(np.round(ymin)),
-                            left=int(np.round(xmin)),
-                            bottom=int(np.round(ymax)),
-                            right=int(np.round(xmax)),
-                            label='dummy',
-                        ).to_coordinates(color=None)
+                    # boolean mask on device; squeeze channel dim
+                    mask_bool_2d = (out_mask_logits[i] > 0.0)[0]
+                    if torch.any(mask_bool_2d):
+                        # noisy: keep at debug to reduce overhead on long runs
+                        logger.debug('Found tracking BB')
+                        # fast bbox on device when output is box; otherwise convert for polygon
+                        rows_any = torch.any(mask_bool_2d, dim=1)
+                        cols_any = torch.any(mask_bool_2d, dim=0)
+                        if bbs_type_map[bbox_id] == 'box':
+                            y_indices = torch.where(rows_any)[0]
+                            x_indices = torch.where(cols_any)[0]
+                            ymin = int(y_indices[0].item())
+                            ymax = int(y_indices[-1].item())
+                            xmin = int(x_indices[0].item())
+                            xmax = int(x_indices[-1].item())
+                            video_segments[bbox_id][start_frame + out_frame_idx] = dl.Box(
+                                top=int(np.round(ymin)),
+                                left=int(np.round(xmin)),
+                                bottom=int(np.round(ymax)),
+                                right=int(np.round(xmax)),
+                                label='dummy',
+                            ).to_coordinates(color=None)
+                        elif bbs_type_map[bbox_id] == 'polygon':
+                            mask = mask_bool_2d.detach().cpu().numpy()
+                            video_segments[bbox_id][start_frame + out_frame_idx] = dl.Polygon.from_segmentation(
+                                mask=mask, label='dummy'
+                            ).to_coordinates(color=None)[0]
+                        else:
+                            raise ValueError(f'Unknown annotation type: {bbs_type_map[bbox_id]}')
                     else:
-                        logger.info('NOT Found tracking BB')
+                        logger.debug('NOT Found tracking BB')
                         # Don't remove
                         # Taking annotation from last frame if not found
                         video_segments[bbox_id][start_frame + out_frame_idx] = video_segments[bbox_id][
                             start_frame + out_frame_idx - 1
                         ]
+            logger.info(f"Propagate in video - Done")
+            logger.info(f"RUNTIME: propagate in video: {time.time() - start_time:.2f}[s]")
+            logger.info(f"RUNTIME: Total runtime: {time.time() - start_time_all:.2f}[s]")
 
         return video_segments
 
@@ -472,10 +536,7 @@ class Runner(su_dl.BaseServiceRunner):
 
             #######################################
             mask = masks[0]
-            model_info = {
-                'name': 'sam2',
-                'confidence': 1.0
-            }
+            model_info = {'name': 'sam2', 'confidence': 1.0}
 
             ##########
             # Upload #
@@ -483,15 +544,11 @@ class Runner(su_dl.BaseServiceRunner):
 
             if return_type in ['binary', 'Semantic']:
                 annotation_definition = dl.Segmentation(
-                    geo=mask,
-                    label=annotation.label,
-                    attributes=annotation.attributes
+                    geo=mask, label=annotation.label, attributes=annotation.attributes
                 )
             elif return_type in ['segment', 'Polygon']:
                 annotation_definition = dl.Polygon.from_segmentation(
-                    mask=mask,
-                    label=annotation.label,
-                    attributes=annotation.attributes
+                    mask=mask, label=annotation.label, attributes=annotation.attributes
                 )
             else:
                 raise ValueError('Unknown return type: {}'.format(return_type))
@@ -585,3 +642,37 @@ class Runner(su_dl.BaseServiceRunner):
         logger.info(f'Total time of execution: {round(toc_final - tic_1, 2)} seconds')
         results = builder.annotations[0].annotation_definition.to_coordinates(color=color)
         return results
+
+
+def test_local():
+    import dtlpy as dl
+
+    dl.setenv('prod')
+    item = dl.items.get(item_id='6891d59ef591c8a098127814')
+    item_stream_url = item.stream
+
+    self = Runner(dl=dl)
+    # ann: dl.Annotation = item.annotations.list()[0]
+    # bbs = {ann.id: ann.to_json()['coordinates']}
+    # start_frame = 0
+    ex = dl.executions.get(execution_id='6894f31cd27c2502b11abc3b')
+    ex.input['dl'] = dl
+    # anns = self.track(dl, item_stream_url, bbs, start_frame)
+    results = self.track(**ex.input)
+
+    for ann in item.annotations.list():
+        if ann.id in results:
+            for frame_id, coords in results[ann.id].items():
+                ann.add_frame(
+                    annotation_definition=dl.Polygon(
+                        geo=dl.Polygon.from_coordinates(coordinates=coords), label=ann.label
+                    ),
+                    frame_num=frame_id,
+                    fixed=True,
+                    object_visible=True,
+                )
+            ann.update(system_metadata=True)
+
+
+if __name__ == '__main__':
+    test_local()
