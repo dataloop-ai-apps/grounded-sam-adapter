@@ -502,8 +502,8 @@ class Runner(su_dl.BaseServiceRunner):
 
         # get item's image
 
-        if os.environ.get('FETCH_EXECUTIONS_FROM_API', '') != '' and 'bot.dataloop.ai' in dl.info()['user_email']:
-            raise ValueError('This function cannot run with a bot user')
+        # if os.environ.get('FETCH_EXECUTIONS_FROM_API', '') != '' and 'bot.dataloop.ai' in dl.info()['user_email']:
+        #     raise ValueError('This function cannot run with a bot user')
 
         logger.info(f'GPU available: {torch.cuda.is_available()}')
         tic_total = time.time()
@@ -586,8 +586,8 @@ class Runner(su_dl.BaseServiceRunner):
         free, total, used = self.get_gpu_memory()
         print(f'Before inference GPU memory - total: {total}, used: {used}, free: {free}')
 
-        if 'bot.dataloop.ai' in dl.info()['user_email']:
-            raise ValueError('This function cannot run with a bot user')
+        # if os.environ.get('MQ_HOST', '') != '' and 'bot.dataloop.ai' in dl.info()['user_email']:
+        #     raise ValueError('This function cannot run with a bot user')
         tic_1 = time.time()
         self.cache_item(item=item)
         image_params = self.cache_items_dict[item.id]
