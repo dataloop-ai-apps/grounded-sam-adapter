@@ -501,7 +501,8 @@ class Runner(su_dl.BaseServiceRunner):
         print(f'Before inference GPU memory - total: {total}, used: {used}, free: {free}')
 
         # get item's image
-        if 'bot.dataloop.ai' in dl.info()['user_email']:
+
+        if os.environ.get('FETCH_EXECUTIONS_FROM_API', '') != '' and 'bot.dataloop.ai' in dl.info()['user_email']:
             raise ValueError('This function cannot run with a bot user')
 
         logger.info(f'GPU available: {torch.cuda.is_available()}')
