@@ -620,12 +620,13 @@ class Runner(su_dl.BaseServiceRunner):
             point_labels = None
             point_coords = None
 
-        masks, _, _ = self.predictor.predict(
+        masks, _, low_res_masks = self.predictor.predict(
             image_properties=image_params.dict(),
             point_coords=point_coords,
             point_labels=point_labels,
             box=input_box,
             multimask_output=False,
+            return_logits=True,  # Get logits for better upsampling
         )
         toc_2 = time.time()
         logger.info(f'time to get predicted mask: {round(toc_2 - tic_2, 2)} seconds')
@@ -634,9 +635,39 @@ class Runner(su_dl.BaseServiceRunner):
         logger.info(f'Creating new predicted mask...')
         tic_3 = time.time()
         builder: dl.AnnotationCollection = item.annotations.builder()
-        # boxed_mask = masks[0][bb[0]['y']:bb[1]['y'], bb[0]['x']:bb[1]['x']]
-        boxed_mask = masks[0][input_box[1] : input_box[3], input_box[0] : input_box[2]]
-        builder.add(annotation_definition=dl.Segmentation(geo=boxed_mask > 0, label='dummy'))
+        
+        # Fix pixelation: The mask is upsampled from 256x256 using bilinear, causing blocky edges.
+        # Re-upsample from low-res logits with smoothing to reduce pixelation artifacts.
+        orig_h, orig_w = image_params.orig_hw
+        
+        # Get low-res mask logits (256x256) and upsample with better quality
+        low_res_mask_tensor = torch.from_numpy(low_res_masks[0]).unsqueeze(0).unsqueeze(0).float()
+        
+        # Upsample to original resolution
+        mask_logits_upsampled = torch.nn.functional.interpolate(
+            low_res_mask_tensor,
+            size=(orig_h, orig_w),
+            mode='bilinear',
+            align_corners=False
+        )
+        
+        # Convert to numpy and apply Gaussian blur to logits before thresholding
+        # This smooths the transition zone and reduces pixelation
+        mask_logits_np = mask_logits_upsampled.squeeze().numpy()
+        sigma = max(0.5, min(orig_h, orig_w) / 600.0)  # Adaptive blur based on image size
+        mask_logits_smoothed = cv2.GaussianBlur(mask_logits_np, (0, 0), sigmaX=sigma, sigmaY=sigma)
+        
+        # Threshold to get binary mask
+        mask = (mask_logits_smoothed > 0.0).astype(bool)
+        
+        # Apply light morphological smoothing to further reduce pixelation
+        kernel_size = max(1, int(min(orig_h, orig_w) / 400))  # Adaptive kernel
+        if kernel_size > 0:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size * 2 + 1, kernel_size * 2 + 1))
+            # Light closing to smooth jagged edges
+            mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel, iterations=1).astype(bool)
+        
+        builder.add(annotation_definition=dl.Segmentation(geo=mask, label='dummy'))
         toc_final = time.time()
         logger.info(f'time to create annotations: {round(toc_final - tic_3, 2)} seconds')
         logger.info(f'Total time of execution: {round(toc_final - tic_1, 2)} seconds')
@@ -647,31 +678,34 @@ class Runner(su_dl.BaseServiceRunner):
 def test_local():
     import dtlpy as dl
 
-    dl.setenv('prod')
-    item = dl.items.get(item_id='6891d59ef591c8a098127814')
-    item_stream_url = item.stream
+    dl.login()
+    # item = dl.items.get(item_id='6891d59ef591c8a098127814')
+    # item_stream_url = item.stream
 
     self = Runner(dl=dl)
     # ann: dl.Annotation = item.annotations.list()[0]
     # bbs = {ann.id: ann.to_json()['coordinates']}
     # start_frame = 0
-    ex = dl.executions.get(execution_id='6894f31cd27c2502b11abc3b')
+    ex = dl.executions.get(execution_id='')
     ex.input['dl'] = dl
+    item_id = ex.input['item']['item_id']
+    item = dl.items.get(item_id=item_id)
+    ex.input['item'] = item
     # anns = self.track(dl, item_stream_url, bbs, start_frame)
-    results = self.track(**ex.input)
+    results = self.predict_interactive_editing(**ex.input)
 
-    for ann in item.annotations.list():
-        if ann.id in results:
-            for frame_id, coords in results[ann.id].items():
-                ann.add_frame(
-                    annotation_definition=dl.Polygon(
-                        geo=dl.Polygon.from_coordinates(coordinates=coords), label=ann.label
-                    ),
-                    frame_num=frame_id,
-                    fixed=True,
-                    object_visible=True,
-                )
-            ann.update(system_metadata=True)
+    # for ann in item.annotations.list():
+    #     if ann.id in results:
+    #         for frame_id, coords in results[ann.id].items():
+    #             ann.add_frame(
+    #                 annotation_definition=dl.Polygon(
+    #                     geo=dl.Polygon.from_coordinates(coordinates=coords), label=ann.label
+    #                 ),
+    #                 frame_num=frame_id,
+    #                 fixed=True,
+    #                 object_visible=True,
+    #             )
+    #         ann.update(system_metadata=True)
 
 
 if __name__ == '__main__':
