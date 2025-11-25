@@ -12,6 +12,11 @@ COPY /_requirements.txt .
 
 RUN pip3 install --user -r _requirements.txt
 RUN pip3 install 'git+https://github.com/facebookresearch/segment-anything-2.git'
+RUN mkdir -p /tmp/app && chown 1000:1000 /tmp/app
+RUN mkdir -p /tmp/app/artifacts && chown 1000:1000 /tmp/app/artifacts
+
+RUN wget -O /tmp/app/artifacts/sam2_hiera_small.pt https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_small.pt
+
 
 # docker build --no-cache -t gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6 -f Dockerfile .
 # docker push gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6

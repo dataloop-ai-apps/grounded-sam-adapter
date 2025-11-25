@@ -152,7 +152,7 @@ class Runner(su_dl.BaseServiceRunner):
         weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_small.pt'
         # weights_filepath = 'artifacts/sam2_hiera_large.pt'
         # weights_filepath = 'artifacts/sam2_hiera_base_plus.pt'
-        weights_filepath = 'artifacts/sam2_hiera_small.pt'
+        weights_filepath = '/tmp/app/artifacts/sam2_hiera_small.pt'
         self.show = False
         if not os.path.isfile(weights_filepath):
             os.makedirs(os.path.dirname(weights_filepath), exist_ok=True)
