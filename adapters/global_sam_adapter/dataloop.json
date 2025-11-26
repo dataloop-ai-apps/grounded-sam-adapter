@@ -246,7 +246,7 @@
         "runtime": {
           "podType": "gpu-t4-m",
           "concurrency": 10,
-          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/grounded-sam-adapter:0.1.6",
+          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/sam-test-runner:1.0.0",
           "autoscaler": {
             "minReplicas": 1,
             "maxReplicas": 7,
