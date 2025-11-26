@@ -12,6 +12,7 @@ COPY /_requirements.txt .
 
 RUN pip3 install --user -r _requirements.txt
 RUN pip3 install 'git+https://github.com/facebookresearch/segment-anything-2.git'
+USER root
 RUN mkdir -p /tmp/app && chown 1000:1000 /tmp/app
 RUN mkdir -p /tmp/app/artifacts && chown 1000:1000 /tmp/app/artifacts
 
