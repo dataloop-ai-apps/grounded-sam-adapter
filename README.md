@@ -7,7 +7,7 @@ the [SAM2](https://github.com/facebookresearch/sam2) model in the Dataloop platf
 
 ## Usage in Dataloop
 
-In Dataloop, Grounded sam can be used in multiple applications:
+In Dataloop, SAM can be used in multiple applications:
 
 * Convert Box Annotations to Segmentation
 * Convert Box Annotations to Polygon
