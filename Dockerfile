@@ -20,14 +20,16 @@ RUN $DL_PYTHON_EXECUTABLE -m pip install \
                 # pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117
                 urllib3>=2.5.0 \
                 protobuf>=4.25.8 \
-                setuptools>=78.1.1 
+                setuptools>=78.1.1 \
+                einops \
+                decord
 
 RUN $DL_PYTHON_EXECUTABLE -m pip install 'git+https://github.com/facebookresearch/segment-anything-2.git'
-
+RUN $DL_PYTHON_EXECUTABLE -m pip install 'git+https://github.com/facebookresearch/sam3.git'
 # make the artifacts available for all users
 RUN mkdir -p /tmp/app /tmp/app/artifacts && chmod -R 0777 /tmp/app
 RUN wget -O /tmp/app/artifacts/sam2_hiera_small.pt https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_small.pt
 
 
-# docker build --no-cache -t gcr.io/viewo-g/piper/agent/runner/apps/sam-test-runner:1.0.0 -f Dockerfile .
-# docker push gcr.io/viewo-g/piper/agent/runner/apps/sam-test-runner:1.0.0
+# docker build --no-cache -t gcr.io/viewo-g/piper/agent/runner/apps/sam3:1.0.0 -f Dockerfile .
+# docker push gcr.io/viewo-g/piper/agent/runner/apps/sam3:1.0.0

@@ -14,10 +14,10 @@ import cv2
 import dtlpy as su_dl
 import numpy as np
 
-from sam2.build_sam import build_sam2, build_sam2_video_predictor
-from sam2.sam2_video_predictor import SAM2VideoPredictor
+from sam3.model_builder import build_sam3_video_predictor
+from sam3.model.sam3_video_predictor import Sam3VideoPredictor
 
-from adapters.global_sam_adapter.sam2_handler import DataloopSamPredictor
+from adapters.global_sam_adapter.sam3_handler import DataloopSamPredictor
 
 logger = logging.getLogger('[GLOBAL-SAM]')
 logger.setLevel('INFO')
@@ -144,25 +144,16 @@ class Runner(su_dl.BaseServiceRunner):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         logger.info(f'GPU available: {torch.cuda.is_available()}')
 
-        # model_cfg = "sam2_hiera_l.yaml"
-        # model_cfg = "sam2_hiera_b+.yaml"
-        model_cfg = "sam2_hiera_s.yaml"
-        # weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_large.pt'
-        # weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_base_plus.pt'
-        weights_url = 'https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_small.pt'
-        # weights_filepath = 'artifacts/sam2_hiera_large.pt'
-        # weights_filepath = 'artifacts/sam2_hiera_base_plus.pt'
-        weights_filepath = '/tmp/app/artifacts/sam2_hiera_small.pt'
-        self.show = False
-        if not os.path.isfile(weights_filepath):
-            os.makedirs(os.path.dirname(weights_filepath), exist_ok=True)
-            urllib.request.urlretrieve(weights_url, weights_filepath)
-
-        sam2_model = build_sam2(model_cfg, weights_filepath, device=device)
-        self.predictor = DataloopSamPredictor(sam2_model)
-        self.video_predictor: SAM2VideoPredictor = build_sam2_video_predictor(
-            model_cfg, weights_filepath, device=device
-        )
+        # SAM3 uses built-in model loading from HuggingFace by default
+        # Build video predictor which properly loads all weights
+        self.video_predictor: Sam3VideoPredictor = build_sam3_video_predictor()
+        
+        # Get the tracker and inject the detector's backbone into it
+        # The tracker doesn't have its own backbone, but needs one for forward_image
+        tracker_model = self.video_predictor.model.tracker
+        tracker_model.backbone = self.video_predictor.model.detector.backbone
+        self.predictor = DataloopSamPredictor(tracker_model)
+        self.tracker = tracker_model
         self.cache_items_dict = dict()
         # tracker params
         self.MAX_AGE = 20
@@ -277,15 +268,15 @@ class Runner(su_dl.BaseServiceRunner):
 
     # default studio
 
-    @staticmethod
     @torch.inference_mode()
     def init_state(
-        video_predictor, cap, image_size, num_frames, offload_video_to_cpu=False, offload_state_to_cpu=False
+        self, cap, image_size, num_frames, offload_video_to_cpu=False, offload_state_to_cpu=False
     ):
         """Initialize an inference state."""
-        compute_device = video_predictor.device  # device of the model
-        img_mean = torch.tensor((0.485, 0.456, 0.406), dtype=torch.float32)[:, None, None]
-        img_std = torch.tensor((0.229, 0.224, 0.225), dtype=torch.float32)[:, None, None]
+        # SAM3 uses the tracker from the video model
+        compute_device = self.tracker.device  # device of the model
+        img_mean = torch.tensor((0.5, 0.5, 0.5), dtype=torch.float32)[:, None, None]  # SAM3 uses different normalization
+        img_std = torch.tensor((0.5, 0.5, 0.5), dtype=torch.float32)[:, None, None]
         images = AsyncVideoFrameLoader(
             cap=cap,
             num_frames=num_frames,
@@ -298,59 +289,20 @@ class Runner(su_dl.BaseServiceRunner):
 
         video_height, video_width = images.video_height, images.video_width
 
-        inference_state = {}
+        # Use SAM3 tracker's init_state method
+        inference_state = self.tracker.init_state(
+            video_height=video_height,
+            video_width=video_width,
+            num_frames=num_frames,
+            offload_video_to_cpu=offload_video_to_cpu,
+            offload_state_to_cpu=offload_state_to_cpu,
+            async_loading_frames=False,
+        )
         inference_state["images"] = images
-        inference_state["num_frames"] = len(images)
-        # whether to offload the video frames to CPU memory
-        # turning on this option saves the GPU memory with only a very small overhead
-        inference_state["offload_video_to_cpu"] = offload_video_to_cpu
-        # whether to offload the inference state to CPU memory
-        # turning on this option saves the GPU memory at the cost of a lower tracking fps
-        # (e.g. in a test case of 768x768 model, fps dropped from 27 to 24 when tracking one object
-        # and from 24 to 21 when tracking two objects)
-        inference_state["offload_state_to_cpu"] = offload_state_to_cpu
-        # the original video height and width, used for resizing final output scores
-        inference_state["video_height"] = video_height
-        inference_state["video_width"] = video_width
         inference_state["device"] = compute_device
-        if offload_state_to_cpu:
-            inference_state["storage_device"] = torch.device("cpu")
-        else:
-            inference_state["storage_device"] = compute_device
-        # inputs on each frame
-        inference_state["point_inputs_per_obj"] = {}
-        inference_state["mask_inputs_per_obj"] = {}
-        # visual features on a small number of recently visited frames for quick interactions
-        inference_state["cached_features"] = {}
-        # values that don't change across frames (so we only need to hold one copy of them)
-        inference_state["constants"] = {}
-        # mapping between client-side object id and model-side object index
-        inference_state["obj_id_to_idx"] = collections.OrderedDict()
-        inference_state["obj_idx_to_id"] = collections.OrderedDict()
-        inference_state["obj_ids"] = []
-        # A storage to hold the model's tracking results and states on each frame
-        inference_state["output_dict"] = {
-            "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
-            "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
-        }
-        # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
-        inference_state["output_dict_per_obj"] = {}
-        # A temporary storage to hold new outputs when user interact with a frame
-        # to add clicks or mask (it's merged into "output_dict" before propagation starts)
-        inference_state["temp_output_dict_per_obj"] = {}
-        # Frames that already holds consolidated outputs from click or mask inputs
-        # (we directly use their consolidated outputs during tracking)
-        inference_state["consolidated_frame_inds"] = {
-            "cond_frame_outputs": set(),  # set containing frame indices
-            "non_cond_frame_outputs": set(),  # set containing frame indices
-        }
-        # metadata for each tracking frame (e.g. which direction it's tracked)
-        inference_state["tracking_has_started"] = False
-        inference_state["frames_already_tracked"] = {}
-        inference_state["frames_tracked_per_obj"] = {}
+        
         # Warm up the visual backbone and cache the image feature on frame 0
-
-        video_predictor._get_image_feature(inference_state, frame_idx=0, batch_size=1)
+        self.tracker._get_image_feature(inference_state, frame_idx=0, batch_size=1)
         return inference_state
 
     def track(self, dl, item_stream_url, bbs, start_frame, frame_duration=60, progress=None) -> dict:
@@ -386,7 +338,8 @@ class Runner(su_dl.BaseServiceRunner):
         logger.info(f"RUNTIME: set video cap: {time.time() - start_time:.2f}[s]")
         video_segments = {bbox_id: dict() for bbox_id, _ in bbs.items()}
         # match the model's preferred image size for better throughput/memory balance
-        image_size = getattr(self.video_predictor, 'image_size', 1024)
+        # SAM3 uses 1008 as default image size
+        image_size = getattr(self.video_predictor.model, 'image_size', 1008)
         start_time = time.time()
         logger.info(f"Init start and loading frames...")
         use_cuda = torch.cuda.is_available()
@@ -395,7 +348,6 @@ class Runner(su_dl.BaseServiceRunner):
         autocast_dtype = torch.bfloat16 if bf16_supported else (torch.float16 if use_cuda else torch.float32)
         with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=autocast_dtype, enabled=use_cuda):
             inference_state = self.init_state(
-                video_predictor=self.video_predictor,
                 cap=cap,
                 image_size=image_size,
                 num_frames=frame_duration,
@@ -420,18 +372,21 @@ class Runner(su_dl.BaseServiceRunner):
                 right = int(np.max([pt['x'] for pt in bb]))
                 bottom = int(np.max([pt['y'] for pt in bb]))
                 input_box = np.array([left, top, right, bottom])
-                frame_idx, object_ids, masks = self.video_predictor.add_new_points_or_box(
-                    inference_state=inference_state, frame_idx=0, obj_id=bbox_id, box=input_box
+                self.tracker.add_new_points_or_box(
+                    inference_state=inference_state, frame_idx=0, obj_id=bbox_id, box=input_box,
+                    rel_coordinates=False, normalize_coords=False
                 )
             logger.info(f"Init start and loading frames - Done")
             logger.info(f"RUNTIME: init state: {time.time() - start_time:.2f}[s]")
             start_time = time.time()
             logger.info(f"Propagate in video...")
             # propagate the prompts to get masklets throughout the video
-            for out_frame_idx, out_obj_ids, out_mask_logits in self.video_predictor.propagate_in_video(
+            for out_frame_idx, out_obj_ids, _, out_mask_logits, _ in self.tracker.propagate_in_video(
                 inference_state=inference_state,
-                # start_frame_idx=start_frame,
-                # max_frame_num_to_track=frame_duration
+                start_frame_idx=0,
+                max_frame_num_to_track=frame_duration,
+                reverse=False,
+                propagate_preflight=True,
             ):
                 if out_frame_idx >= frame_duration:
                     break
@@ -650,32 +605,30 @@ class Runner(su_dl.BaseServiceRunner):
 def test_local():
     import dtlpy as dl
 
-    dl.setenv('prod')
-    item = dl.items.get(item_id='6891d59ef591c8a098127814')
-    item_stream_url = item.stream
+    dl.setenv('rc')
+    # dl.logout()
+    # dl.login()
+    item = dl.items.get(item_id='66cc50ba61f4c6f7e955c0fc')
 
     self = Runner(dl=dl)
-    # ann: dl.Annotation = item.annotations.list()[0]
-    # bbs = {ann.id: ann.to_json()['coordinates']}
-    # start_frame = 0
-    ex = dl.executions.get(execution_id='6894f31cd27c2502b11abc3b')
+
+    ex = dl.executions.get(execution_id='693edd1547cc64790be9380e')
     ex.input['dl'] = dl
-    # anns = self.track(dl, item_stream_url, bbs, start_frame)
-    results = self.track(**ex.input)
+    if 'item' in ex.input:
+        ex.input['item'] = dl.items.get(item_id=ex.input['item']['item_id'])
+    func_to_run = getattr(self, ex.function_name)
+    print(ex.input)
+    results = func_to_run(**ex.input)
+    builder = item.annotations.builder()
+    if ex.function_name == 'track':
+        result_keys = list(results.keys())
+        for result_key in result_keys:
+            for frame_num, coords in results[result_key].items():
+                builder.add(annotation_definition=dl.Box(left=coords[0]['x'], top=coords[0]['y'], right=coords[1]['x'], bottom=coords[1]['y'], label='dummy'), frame_num=frame_num, object_id='1')
+    item.annotations.update(builder=builder)
 
-    for ann in item.annotations.list():
-        if ann.id in results:
-            for frame_id, coords in results[ann.id].items():
-                ann.add_frame(
-                    annotation_definition=dl.Polygon(
-                        geo=dl.Polygon.from_coordinates(coordinates=coords), label=ann.label
-                    ),
-                    frame_num=frame_id,
-                    fixed=True,
-                    object_visible=True,
-                )
-            ann.update(system_metadata=True)
 
+    print(results)
 
 if __name__ == '__main__':
     test_local()
