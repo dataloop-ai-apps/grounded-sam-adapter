@@ -608,7 +608,8 @@ def test_local():
     dl.setenv('rc')
     # dl.logout()
     # dl.login()
-    item = dl.items.get(item_id='66cc50ba61f4c6f7e955c0fc')
+    item = dl.items.get(item_id='64f597eda91635a454134c79')
+    item.open_in_web()
 
     self = Runner(dl=dl)
 
@@ -625,7 +626,7 @@ def test_local():
         for result_key in result_keys:
             for frame_num, coords in results[result_key].items():
                 builder.add(annotation_definition=dl.Box(left=coords[0]['x'], top=coords[0]['y'], right=coords[1]['x'], bottom=coords[1]['y'], label='dummy'), frame_num=frame_num, object_id='1')
-    item.annotations.update(builder=builder)
+    item.annotations.upload(builder)
 
 
     print(results)

@@ -31,5 +31,5 @@ RUN mkdir -p /tmp/app /tmp/app/artifacts && chmod -R 0777 /tmp/app
 RUN wget -O /tmp/app/artifacts/sam2_hiera_small.pt https://storage.googleapis.com/model-mgmt-snapshots/sam2/sam2_hiera_small.pt
 
 
-# docker build --no-cache -t gcr.io/viewo-g/piper/agent/runner/apps/sam3:1.0.0 -f Dockerfile .
-# docker push gcr.io/viewo-g/piper/agent/runner/apps/sam3:1.0.0
+# docker build --no-cache -t gcr.io/viewo-g/piper/agent/runner/apps/sam3:1.0.1 -f Dockerfile .
+# docker push gcr.io/viewo-g/piper/agent/runner/apps/sam3:1.0.1

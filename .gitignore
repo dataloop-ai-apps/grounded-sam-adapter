@@ -403,3 +403,5 @@ customer_*.*
 *venv*
 
 deploy.py
+.vscode/
+sam3/
