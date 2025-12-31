@@ -366,11 +366,13 @@ class Runner(su_dl.BaseServiceRunner):
                 else:
                     bbs_type_map[bbox_id] = 'box'
 
+            video_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+            video_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
             for bbox_id, bb in bbs.items():
-                left = int(np.min([pt['x'] for pt in bb]))
-                top = int(np.min([pt['y'] for pt in bb]))
-                right = int(np.max([pt['x'] for pt in bb]))
-                bottom = int(np.max([pt['y'] for pt in bb]))
+                left = int(np.min([pt['x'] / video_width * image_size for pt in bb]))
+                top = int(np.min([pt['y'] / video_height * image_size for pt in bb]))
+                right = int(np.max([pt['x'] / video_width * image_size for pt in bb]))
+                bottom = int(np.max([pt['y'] / video_height * image_size for pt in bb]))
                 input_box = np.array([left, top, right, bottom])
                 self.tracker.add_new_points_or_box(
                     inference_state=inference_state, frame_idx=0, obj_id=bbox_id, box=input_box,
@@ -613,19 +615,21 @@ def test_local():
 
     self = Runner(dl=dl)
 
-    ex = dl.executions.get(execution_id='693edd1547cc64790be9380e')
+    ex = dl.executions.get(execution_id='69512785bd35335067a8666b')
     ex.input['dl'] = dl
     if 'item' in ex.input:
         ex.input['item'] = dl.items.get(item_id=ex.input['item']['item_id'])
     func_to_run = getattr(self, ex.function_name)
     print(ex.input)
-    results = func_to_run(**ex.input)
+    inputs = ex.input.copy()
+    inputs['frame_duration'] = 60
+    results = func_to_run(**inputs)
     builder = item.annotations.builder()
     if ex.function_name == 'track':
         result_keys = list(results.keys())
-        for result_key in result_keys:
+        for obj_id, result_key in enumerate(result_keys):
             for frame_num, coords in results[result_key].items():
-                builder.add(annotation_definition=dl.Box(left=coords[0]['x'], top=coords[0]['y'], right=coords[1]['x'], bottom=coords[1]['y'], label='dummy'), frame_num=frame_num, object_id='1')
+                builder.add(annotation_definition=dl.Box(left=coords[0]['x'], top=coords[0]['y'], right=coords[1]['x'], bottom=coords[1]['y'], label='dummy'), frame_num=frame_num, object_id=obj_id)
     item.annotations.upload(builder)
 
 
