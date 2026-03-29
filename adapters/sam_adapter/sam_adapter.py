@@ -169,9 +169,10 @@ class SAMDataset(Dataset):
         if annotation['type'] == 'binary':
             encoded_data = annotation['coordinates'].split(",")[1]
             binary_data = base64.b64decode(encoded_data)
-            mask = Image.open(io.BytesIO(binary_data)).convert("L")
-            mask = mask.resize((new_width, new_height), Image.NEAREST)
-            mask = np.array(mask) > 0
+            with Image.open(io.BytesIO(binary_data)) as img:
+                img = img.convert("L")
+                img = img.resize((new_width, new_height), Image.NEAREST)
+                mask = np.array(img) > 0
         elif annotation['type'] == 'segment':
             polygon_points = [(int(p['x'] * scaling_factor), int(p['y'] * scaling_factor))
                               for p in annotation['coordinates'][0]]
