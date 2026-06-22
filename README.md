@@ -3,11 +3,11 @@
 The Segment Anything Model (SAM) in the Image Studio is a powerful tool designed to make the process of annotating images for instance segmentation both efficient and precise. SAM uses advanced machine learning algorithms to automate and assist with the segmentation process. For more information, refer to the [Segment Anything](https://segment-anything.com/). 
 
 This repository contains the model interface for
-the [SAM2](https://github.com/facebookresearch/sam2) model in the Dataloop platform.
+the [SAM2](https://github.com/facebookresearch/sam2) model in the DDOE platform.
 
-## Usage in Dataloop
+## Usage in DDOE
 
-In Dataloop, SAM can be used in multiple applications:
+In DDOE, SAM can be used in multiple applications:
 
 * Convert Box Annotations to Segmentation
 * Convert Box Annotations to Polygon
@@ -16,7 +16,7 @@ In Dataloop, SAM can be used in multiple applications:
 
 ### Convert Box Annotations to Segmentation
 
-Dataloop offers advanced tools to enhance annotation precision and streamline workflows, leveraging the power of SAM2 models to convert bounding box annotations into segmentation masks. This conversion provides pixel-level classification, which is essential for detailed object recognition tasks.
+DDOE offers advanced tools to enhance annotation precision and streamline workflows, leveraging the power of SAM2 models to convert bounding box annotations into segmentation masks. This conversion provides pixel-level classification, which is essential for detailed object recognition tasks.
 
 ![alt text](assets/sam2_box_to_segmentation.gif)
 
@@ -37,7 +37,7 @@ To convert Box annotation to Segmentation:
 
 ### Convert Box Annotations to Polygon
 
-Dataloop’s Convert Box to Polygon feature, powered by SAM2 models, enhances annotation accuracy by transforming box annotations into precise polygon shapes. This tool converts a selected bounding box into a polygon that closely contours the object within, making it particularly beneficial for objects with irregular shapes where a rectangle may not effectively represent boundaries. 
+DDOE’s Convert Box to Polygon feature, powered by SAM2 models, enhances annotation accuracy by transforming box annotations into precise polygon shapes. This tool converts a selected bounding box into a polygon that closely contours the object within, making it particularly beneficial for objects with irregular shapes where a rectangle may not effectively represent boundaries. 
 
 ![alt text](assets/sam2_box_to_polygon.gif)
 
@@ -73,7 +73,7 @@ To use the Auto Segmentation feature:
 
 ### AI Tracker in the Video Annotation Studio
 
-In Dataloop’s Video Annotation Studio, the SAM2 model significantly enhances object tracking through the AI Tracker tool. The SAM2 model, combined with AI-driven tracking, allows annotators to streamline the tracking of objects across video frames, which traditionally requires extensive manual effort.
+In DDOE’s Video Annotation Studio, the SAM2 model significantly enhances object tracking through the AI Tracker tool. The SAM2 model, combined with AI-driven tracking, allows annotators to streamline the tracking of objects across video frames, which traditionally requires extensive manual effort.
 
 ![alt text](assets/sam2_video_ai_tracker.gif)
 
