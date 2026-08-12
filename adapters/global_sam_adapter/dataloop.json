@@ -246,7 +246,7 @@
         "runtime": {
           "podType": "gpu-t4-m",
           "concurrency": 10,
-          "runnerImage": "gcr.io/viewo-g/piper/agent/runner/apps/sam-test-runner:1.0.0",
+          "runnerImage": "hub.dataloop.ai/dtlpy-runner-images/cpu:python3.14_full",
           "autoscaler": {
             "minReplicas": 1,
             "maxReplicas": 7,
