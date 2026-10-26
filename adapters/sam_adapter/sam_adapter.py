@@ -368,7 +368,7 @@ class ModelAdapter(dl.BaseModelAdapter):
         return batch_annotations
 
     def convert_from_dtlpy(self, data_path, **kwargs):
-        """ Convert Dataloop structure data to model structured
+        """ Convert DDOE structure data to model structured
 
             Virtual method - need to implement
 

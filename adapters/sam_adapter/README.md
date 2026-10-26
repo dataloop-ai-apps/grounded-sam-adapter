@@ -1,6 +1,6 @@
 # SAM2 Model Adapter
 
-This is a Dataloop adapter for the Segment Anything Model 2 (SAM2), enabling both inference and fine-tuning capabilities.
+This is a DDOE adapter for the Segment Anything Model 2 (SAM2), enabling both inference and fine-tuning capabilities.
 
 ## Prediction
 
@@ -61,4 +61,4 @@ The adapter supports fine-tuning of the SAM2 model using two types of input anno
 - Generation of point prompts from segmentation masks for training
 - Conversion of various annotation formats to model-compatible inputs
 
-The trained model can be saved and loaded for future use within the Dataloop platform.
+The trained model can be saved and loaded for future use within the DDOE platform.
