@@ -246,7 +246,7 @@
         "runtime": {
           "podType": "gpu-t4-m",
           "concurrency": 10,
-          "runnerImage": "hub.dataloop.ai/dtlpy-runner-images/gpu:python3.13_full_bci",
+          "runnerImage": "hub.dataloop.ai/customerhub/piper/agent/runner/gpu/base:python3.13_full_bci",
           "autoscaler": {
             "minReplicas": 1,
             "maxReplicas": 7,
