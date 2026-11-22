@@ -171,16 +171,22 @@ class Runner(su_dl.BaseServiceRunner):
 
     @staticmethod
     def get_gpu_memory():
-        command = "nvidia-smi --query-gpu=memory.free --format=csv"
-        info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
-        free = [int(x.split()[0]) for i, x in enumerate(info)]
-        command = "nvidia-smi --query-gpu=memory.total --format=csv"
-        info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
-        total = [int(x.split()[0]) for i, x in enumerate(info)]
-        command = "nvidia-smi --query-gpu=memory.used --format=csv"
-        info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
-        used = [int(x.split()[0]) for i, x in enumerate(info)]
-        return free, total, used
+        if not torch.cuda.is_available():
+            return [], [], []
+        try:
+            command = "nvidia-smi --query-gpu=memory.free --format=csv"
+            info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+            free = [int(x.split()[0]) for i, x in enumerate(info)]
+            command = "nvidia-smi --query-gpu=memory.total --format=csv"
+            info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+            total = [int(x.split()[0]) for i, x in enumerate(info)]
+            command = "nvidia-smi --query-gpu=memory.used --format=csv"
+            info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+            used = [int(x.split()[0]) for i, x in enumerate(info)]
+            return free, total, used
+        except (FileNotFoundError, subprocess.CalledProcessError) as e:
+            logger.warning(f'Failed to get GPU memory info: {e}')
+            return [], [], []
 
     @staticmethod
     def progress_update(progress, message):
